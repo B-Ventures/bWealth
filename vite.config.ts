@@ -16,8 +16,8 @@ export default defineConfig(({mode}) => {
           enabled: true
         },
         manifest: {
-          name: 'Vault & Vine',
-          short_name: 'Vault',
+          name: 'bWealth',
+          short_name: 'bWealth',
           description: 'Family Gold Tracker',
           theme_color: '#f5f5f4', // stone-50
           icons: [

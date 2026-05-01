@@ -31,7 +31,7 @@ export function MainLayout() {
               <div className="w-9 h-9 flex items-center justify-center rounded-2xl bg-gradient-to-tr from-amber-500 to-yellow-400 text-white shadow-sm ring-1 ring-amber-500/20">
                 <Users className="w-5 h-5" />
               </div>
-              <h1 className="text-xl font-display font-semibold tracking-tight text-stone-900">Vault & Vine</h1>
+              <h1 className="text-xl font-display font-semibold tracking-tight text-stone-900">bWealth</h1>
             </div>
           </div>
           

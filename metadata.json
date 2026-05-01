@@ -1,6 +1,6 @@
 {
-  "name": "Family Gold Savings Tracker",
-  "description": "A family savings tracker that manages beneficiaries, goals, deposits, and tracks savings against gold coin investments.",
+  "name": "bWealth",
+  "description": "Family Gold Tracker",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

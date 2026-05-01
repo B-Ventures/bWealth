@@ -156,7 +156,7 @@ export function AppSettings() {
             </div>
             <div>
               <h3 className="font-display font-semibold text-stone-900 text-lg">Install App</h3>
-              <p className="text-sm text-stone-500 tracking-wide mt-0.5">Add Vault &amp; Vine to your home screen.</p>
+              <p className="text-sm text-stone-500 tracking-wide mt-0.5">Add bWealth to your home screen.</p>
             </div>
           </div>
         </div>
