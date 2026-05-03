@@ -10,6 +10,14 @@ export function AppSettings() {
   const [installPrompt, setInstallPrompt] = useState<any>(null);
 
   useEffect(() => {
+    if (typeof Notification !== 'undefined') {
+      if (Notification.permission === 'granted') {
+        setNotifStatus('Enabled');
+      } else if (Notification.permission === 'denied') {
+        setNotifStatus('Permission Denied (Reset in Browser)');
+      }
+    }
+
     const handleBeforeInstallPrompt = (e: any) => {
       e.preventDefault();
       setInstallPrompt(e);
