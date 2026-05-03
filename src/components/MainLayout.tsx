@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { useStore } from '../store';
-import { Settings, Users, ArrowLeft, LogIn, ShieldCheck, TrendingUp, Sparkles } from 'lucide-react';
+import { Settings, Users, ArrowLeft, LogIn, ShieldCheck, TrendingUp, Sparkles, Download } from 'lucide-react';
 import { Dashboard } from './Dashboard';
 import { BeneficiaryDetail } from './BeneficiaryDetail';
 import { AppSettings } from './AppSettings';
 import { motion, AnimatePresence } from 'motion/react';
+import { useInstallPrompt } from '../hooks/useInstallPrompt';
 
 export function MainLayout() {
   const { user, authReady, login } = useStore();
   const [view, setView] = useState<'dashboard' | 'settings' | 'detail'>('dashboard');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { deferredPrompt, install } = useInstallPrompt();
 
   const navigateTo = (view: 'dashboard' | 'settings', id: string | null = null) => {
     setView(view);
@@ -60,11 +62,21 @@ export function MainLayout() {
 
             <button
               onClick={login}
-              className="w-full py-4 px-6 bg-stone-900 text-white rounded-2xl font-semibold flex items-center justify-center gap-3 hover:bg-stone-800 transition-all active:scale-[0.98] shadow-xl shadow-stone-900/10"
+              className="w-full py-4 px-6 bg-stone-900 text-white rounded-2xl font-semibold flex items-center justify-center gap-3 hover:bg-stone-800 transition-all active:scale-[0.98] shadow-xl shadow-stone-900/10 mb-4"
             >
               <LogIn className="w-5 h-5" />
               Sign in with Google
             </button>
+
+            {deferredPrompt && (
+              <button
+                onClick={install}
+                className="w-full py-4 px-6 bg-white text-stone-900 border border-stone-200 rounded-2xl font-semibold flex items-center justify-center gap-3 hover:bg-stone-50 transition-all active:scale-[0.98] shadow-sm mb-4"
+              >
+                <Download className="w-5 h-5 text-amber-500" />
+                Install App to Device
+              </button>
+            )}
             
             <p className="mt-8 text-xs text-stone-400 flex items-center justify-center gap-1.5">
               <Sparkles className="w-3 h-3" />
@@ -97,12 +109,23 @@ export function MainLayout() {
             </div>
           </div>
           
-          <button 
-            onClick={() => navigateTo('settings')}
-            className="p-2.5 text-stone-400 hover:text-stone-900 rounded-full hover:bg-stone-100 transition-colors"
-          >
-            <Settings className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {deferredPrompt && (
+              <button
+                onClick={install}
+                className="flex items-center gap-2 px-3 py-1.5 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-full text-xs font-semibold transition-colors mr-2"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Install App
+              </button>
+            )}
+            <button 
+              onClick={() => navigateTo('settings')}
+              className="p-2.5 text-stone-400 hover:text-stone-900 rounded-full hover:bg-stone-100 transition-colors"
+            >
+              <Settings className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </header>
 

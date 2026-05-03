@@ -7,6 +7,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
+    base: '/',
     plugins: [
       react(), 
       tailwindcss(),
@@ -20,11 +21,14 @@ export default defineConfig(({mode}) => {
           short_name: 'bWealth',
           description: 'Family Gold Tracker',
           theme_color: '#f5f5f4', // stone-50
+          background_color: '#ffffff',
+          display: 'standalone',
           icons: [
             {
               src: 'icon.svg',
               sizes: '192x192 512x512',
-              type: 'image/svg+xml'
+              type: 'image/svg+xml',
+              purpose: 'any maskable'
             }
           ]
         }
