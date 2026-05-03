@@ -1,17 +1,13 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../store';
-import { Download, Upload, Coins, Loader2, BellRing, Smartphone } from 'lucide-react';
+import { Coins, Loader2, BellRing, Smartphone, LogOut, UserCircle } from 'lucide-react';
 import { formatCurrency } from '../lib/utils';
-import { DEFAULT_STATE } from '../types';
 import { requestNotificationPermission } from '../firebase';
 
 export function AppSettings() {
-  const { state, updateGoldPrice, importData } = useStore();
-  const [price, setPrice] = useState(state.currentGoldPricePerUnit.toString());
-  const [saved, setSaved] = useState(false);
+  const { state, user, logout } = useStore();
   const [notifStatus, setNotifStatus] = useState<string>('Enable Notifications');
   const [installPrompt, setInstallPrompt] = useState<any>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: any) => {
@@ -31,16 +27,6 @@ export function AppSettings() {
     }
   };
 
-  const handleSavePrice = (e: React.FormEvent) => {
-    e.preventDefault();
-    const val = parseFloat(price);
-    if (!isNaN(val) && val > 0) {
-      updateGoldPrice(val);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    }
-  };
-
   const handleEnableNotifications = async () => {
     setNotifStatus('Requesting...');
     try {
@@ -55,43 +41,58 @@ export function AppSettings() {
     }
   };
 
-  const handleExport = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href",     dataStr);
-    downloadAnchorNode.setAttribute("download", "family_gold_savings_backup.json");
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
-  };
-
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const json = JSON.parse(event.target?.result as string);
-        if (json && typeof json === 'object' && 'beneficiaries' in json) {
-          importData({ ...DEFAULT_STATE, ...json });
-          alert("Backup restored successfully!");
-        } else {
-          alert("Invalid backup file format.");
-        }
-      } catch (err) {
-        alert("Error parsing backup file.");
-      }
-    };
-    reader.readAsText(file);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
   return (
     <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div>
         <h2 className="text-3xl font-display font-semibold tracking-tight text-stone-900">Settings</h2>
-        <p className="text-sm text-stone-500 mt-1 tracking-wide">Manage global preferences and data backups.</p>
+        <p className="text-sm text-stone-500 mt-1 tracking-wide">Manage global preferences and your secure account.</p>
+      </div>
+
+      <div className="bg-white rounded-[24px] shadow-sm border border-stone-200/60 overflow-hidden">
+        <div className="p-6 border-b border-stone-100 bg-stone-50/30">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 shadow-inner">
+              <UserCircle className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="font-display font-semibold text-stone-900 text-lg">Account</h3>
+              <p className="text-sm text-stone-500 tracking-wide mt-0.5">Logged in as {user?.email}</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="p-6">
+          <div className="flex items-center justify-between gap-4 p-4 bg-stone-50 rounded-2xl border border-stone-200/60 mb-6">
+            <div className="flex items-center gap-3">
+              {user?.photoURL ? (
+                <img src={user.photoURL} alt={user.displayName || 'Avatar'} className="w-10 h-10 rounded-full border border-stone-200" />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-stone-200 flex items-center justify-center text-stone-500">
+                  {user?.displayName?.[0] || user?.email?.[0]}
+                </div>
+              )}
+              <div>
+                <p className="font-semibold text-stone-900 text-sm leading-tight">{user?.displayName}</p>
+                <p className="text-xs text-stone-500">{user?.email}</p>
+              </div>
+            </div>
+            <button 
+              onClick={logout}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-stone-200 text-red-600 hover:bg-red-50 hover:border-red-100 rounded-xl text-sm font-semibold transition-all shadow-sm"
+            >
+              <LogOut className="w-4 h-4" />
+              Sign Out
+            </button>
+          </div>
+          <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 flex items-start gap-3">
+            <div className="mt-0.5">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            </div>
+            <p className="text-xs text-emerald-800 leading-relaxed font-medium">
+              Your data is being stored safely in the Google Cloud database. All sessions are encrypted and private to your account.
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-[24px] shadow-sm border border-stone-200/60 overflow-hidden">
@@ -179,38 +180,6 @@ export function AppSettings() {
               </ul>
             </div>
           )}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-[24px] shadow-sm border border-stone-200/60 overflow-hidden">
-        <div className="p-6 border-b border-stone-100 bg-stone-50/30">
-          <h3 className="font-display font-semibold text-stone-900 text-lg">Data Backup & Restore</h3>
-          <p className="text-sm text-stone-500 mt-1 tracking-wide">Export your data to a file for safekeeping, or restore from a previous backup.</p>
-        </div>
-        
-        <div className="p-6 flex flex-col sm:flex-row gap-4">
-          <button 
-            onClick={handleExport}
-            className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 rounded-xl font-medium transition-all shadow-sm hover:shadow"
-          >
-            <Download className="w-5 h-5" />
-            Export Backup
-          </button>
-
-          <input 
-            type="file" 
-            accept=".json" 
-            className="hidden" 
-            ref={fileInputRef}
-            onChange={handleImport}
-          />
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 rounded-xl font-medium transition-all shadow-sm hover:shadow"
-          >
-            <Upload className="w-5 h-5" />
-            Restore Backup
-          </button>
         </div>
       </div>
     </div>

@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and settings",
+      "type": "object",
+      "properties": {
+        "currency": { "type": "string", "description": "Preferred currency" },
+        "lastGoldPrice": { "type": "number", "description": "Last fetched gold price" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Beneficiary": {
+      "title": "Beneficiary",
+      "description": "A family member or person for whom savings are tracked",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "avatarColor": { "type": "string" },
+        "birthDate": { "type": "string", "format": "date" },
+        "monthlyTarget": { "type": "number" },
+        "targetAge": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "avatarColor"]
+    },
+    "Deposit": {
+      "title": "Deposit",
+      "description": "A cash deposit recorded for a beneficiary",
+      "type": "object",
+      "properties": {
+        "beneficiaryId": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" },
+        "isRecurring": { "type": "boolean" },
+        "recurringId": { "type": "string" },
+        "notes": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "completed"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["beneficiaryId", "amount", "date"]
+    },
+    "RecurringConfig": {
+      "title": "RecurringConfig",
+      "description": "Configuration for automated or manual recurring deposits",
+      "type": "object",
+      "properties": {
+        "beneficiaryId": { "type": "string" },
+        "amount": { "type": "number" },
+        "frequency": { "type": "string", "enum": ["weekly", "monthly", "yearly"] },
+        "startDate": { "type": "string", "format": "date-time" },
+        "nextDate": { "type": "string", "format": "date-time" },
+        "isManual": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["beneficiaryId", "amount", "frequency", "startDate", "nextDate"]
+    },
+    "GoldInvestment": {
+      "title": "GoldInvestment",
+      "description": "Records of gold purchases/allocations",
+      "type": "object",
+      "properties": {
+        "beneficiaryId": { "type": "string" },
+        "quantity": { "type": "number" },
+        "purchasePricePerUnit": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" },
+        "isExternal": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["beneficiaryId", "quantity", "purchasePricePerUnit", "date"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile and settings"
+    },
+    "/users/{userId}/beneficiaries/{beneficiaryId}": {
+      "schema": "Beneficiary",
+      "description": "Beneficiaries managed by the user"
+    },
+    "/users/{userId}/deposits/{depositId}": {
+      "schema": "Deposit",
+      "description": "Deposit history"
+    },
+    "/users/{userId}/recurringConfigs/{configId}": {
+      "schema": "RecurringConfig",
+      "description": "Recurring schedule configurations"
+    },
+    "/users/{userId}/goldInvestments/{investmentId}": {
+      "schema": "GoldInvestment",
+      "description": "Gold allocation history"
+    }
+  }
+}

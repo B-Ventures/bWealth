@@ -1,0 +1,120 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Helpers ---
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Entity Validations ---
+    function isValidUser(data) {
+      return data.keys().hasAll(['currency', 'updatedAt']) 
+        && data.currency is string && data.currency.size() <= 10
+        && data.updatedAt == request.time;
+    }
+
+    function isValidBeneficiary(data) {
+      return data.keys().hasAll(['name', 'avatarColor', 'createdAt'])
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.avatarColor is string && data.avatarColor.size() <= 50
+        && data.createdAt == (resource == null ? request.time : existing().createdAt);
+    }
+
+    function isValidDeposit(data) {
+      return data.keys().hasAll(['beneficiaryId', 'amount', 'date', 'isRecurring', 'status', 'createdAt'])
+        && isValidId(data.beneficiaryId)
+        && data.amount is number && data.amount >= 0
+        && data.date is string // simplified for now, usually timestamp
+        && data.isRecurring is bool
+        && data.status in ['pending', 'completed']
+        && data.createdAt == (resource == null ? request.time : existing().createdAt);
+    }
+
+    function isValidRecurringConfig(data) {
+      return data.keys().hasAll(['beneficiaryId', 'amount', 'frequency', 'startDate', 'nextDate', 'createdAt'])
+        && isValidId(data.beneficiaryId)
+        && data.amount is number && data.amount >= 0
+        && data.frequency in ['weekly', 'monthly', 'yearly']
+        && data.createdAt == (resource == null ? request.time : existing().createdAt);
+    }
+
+    function isValidGoldInvestment(data) {
+      return data.keys().hasAll(['beneficiaryId', 'quantity', 'purchasePricePerUnit', 'date', 'createdAt'])
+        && isValidId(data.beneficiaryId)
+        && data.quantity is number && data.quantity >= 0
+        && data.purchasePricePerUnit is number && data.purchasePricePerUnit >= 0
+        && data.createdAt == (resource == null ? request.time : existing().createdAt);
+    }
+
+    // --- Match Blocks ---
+
+    // User Profile
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidUser(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['currency', 'lastGoldPrice', 'updatedAt']);
+
+      // Beneficiaries
+      match /beneficiaries/{beneficiaryId} {
+        allow list: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(beneficiaryId);
+        allow create: if isOwner(userId) && isValidId(beneficiaryId) && isValidBeneficiary(incoming());
+        allow update: if isOwner(userId) && isValidId(beneficiaryId) && isValidBeneficiary(incoming())
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatarColor', 'birthDate', 'monthlyTarget', 'targetAge']);
+        allow delete: if isOwner(userId) && isValidId(beneficiaryId);
+      }
+
+      // Deposits
+      match /deposits/{depositId} {
+        allow list: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(depositId);
+        allow create: if isOwner(userId) && isValidId(depositId) && isValidDeposit(incoming());
+        allow update: if isOwner(userId) && isValidId(depositId) && isValidDeposit(incoming())
+          && incoming().diff(existing()).affectedKeys().hasOnly(['amount', 'date', 'notes', 'status']);
+        allow delete: if isOwner(userId) && isValidId(depositId);
+      }
+
+      // Recurring Configs
+      match /recurringConfigs/{configId} {
+        allow list: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(configId);
+        allow create: if isOwner(userId) && isValidId(configId) && isValidRecurringConfig(incoming());
+        allow update: if isOwner(userId) && isValidId(configId) && isValidRecurringConfig(incoming())
+          && incoming().diff(existing()).affectedKeys().hasOnly(['amount', 'frequency', 'nextDate', 'isManual']);
+        allow delete: if isOwner(userId) && isValidId(configId);
+      }
+
+      // Gold Investments
+      match /goldInvestments/{investmentId} {
+        allow list: if isOwner(userId);
+        allow get: if isOwner(userId) && isValidId(investmentId);
+        allow create: if isOwner(userId) && isValidId(investmentId) && isValidGoldInvestment(incoming());
+        allow update: if isOwner(userId) && isValidId(investmentId) && isValidGoldInvestment(incoming())
+          && incoming().diff(existing()).affectedKeys().hasOnly(['quantity', 'purchasePricePerUnit', 'date', 'isExternal']);
+        allow delete: if isOwner(userId) && isValidId(investmentId);
+      }
+    }
+  }
+}

@@ -21,14 +21,14 @@ async function startServer() {
         }
       });
       if (!goldResponse.ok) throw new Error(`Gold fetch failed: ${goldResponse.statusText}`);
-      const goldData = await goldResponse.json();
+      const goldData = await goldResponse.json() as any;
       const priceOzUsd = goldData?.chart?.result?.[0]?.meta?.regularMarketPrice;
       if (!priceOzUsd || typeof priceOzUsd !== 'number') throw new Error('Invalid gold data');
 
       // Fetch USD to JOD exchange rate
       const fxResponse = await fetch('https://open.er-api.com/v6/latest/USD');
       if (!fxResponse.ok) throw new Error(`FX fetch failed: ${fxResponse.statusText}`);
-      const fxData = await fxResponse.json();
+      const fxData = await fxResponse.json() as any;
       const usdToJod = fxData?.rates?.JOD;
       if (!usdToJod) throw new Error('Invalid FX data');
 
