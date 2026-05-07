@@ -114,6 +114,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         // Init user doc
         setDoc(userDocRef, {
           currency: 'JOD',
+          goldSourceUrl: 'https://jjsjo.com/',
+          lastGoldPrice: 840,
           updatedAt: serverTimestamp()
         }).catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`));
       }

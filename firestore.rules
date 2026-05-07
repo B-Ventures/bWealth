@@ -31,6 +31,10 @@ service cloud.firestore {
     function isValidUser(data) {
       return data.keys().hasAll(['currency', 'updatedAt']) 
         && data.currency is string && data.currency.size() <= 10
+        && (data.get('lastGoldPrice', 0) is number)
+        && (data.get('previousGoldPrice', 0) is number)
+        && (data.get('lastSyncedAt', '') is string)
+        && (data.get('goldSourceUrl', '') is string)
         && data.updatedAt == request.time;
     }
 
@@ -74,7 +78,7 @@ service cloud.firestore {
       allow get: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUser(incoming());
       allow update: if isOwner(userId) && isValidUser(incoming())
-        && incoming().diff(existing()).affectedKeys().hasOnly(['currency', 'lastGoldPrice', 'updatedAt']);
+        && incoming().diff(existing()).affectedKeys().hasOnly(['currency', 'lastGoldPrice', 'previousGoldPrice', 'lastSyncedAt', 'goldSourceUrl', 'updatedAt']);
 
       // Beneficiaries
       match /beneficiaries/{beneficiaryId} {

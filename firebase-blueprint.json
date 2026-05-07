@@ -7,6 +7,9 @@
       "properties": {
         "currency": { "type": "string", "description": "Preferred currency" },
         "lastGoldPrice": { "type": "number", "description": "Last fetched gold price" },
+        "previousGoldPrice": { "type": "number", "description": "Previous gold price for trend tracking" },
+        "lastSyncedAt": { "type": "string", "format": "date-time", "description": "Timestamp of last successful price sync" },
+        "goldSourceUrl": { "type": "string", "description": "URL used for scraping gold prices" },
         "updatedAt": { "type": "string", "format": "date-time" }
       }
     },

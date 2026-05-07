@@ -58,5 +58,6 @@ export const DEFAULT_STATE: AppState = {
   recurringConfigs: [],
   goldInvestments: [],
   currentGoldPricePerUnit: 840, // Default example 8g JOD
+  goldSourceUrl: 'https://jjsjo.com/',
   currency: 'JOD',
 };
