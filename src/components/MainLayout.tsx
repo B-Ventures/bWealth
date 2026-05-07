@@ -8,14 +8,31 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 
 export function MainLayout() {
-  const { user, authReady, login } = useStore();
+  const { user, authReady, login, loginRedirect, loginError, setLoginError } = useStore();
   const [view, setView] = useState<'dashboard' | 'settings' | 'detail'>('dashboard');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const { deferredPrompt, install } = useInstallPrompt();
 
   const navigateTo = (view: 'dashboard' | 'settings', id: string | null = null) => {
     setView(view);
     setSelectedId(id);
+  };
+
+  const handleLogin = async (method: 'popup' | 'redirect') => {
+    setLoginError(null);
+    setIsLoggingIn(true);
+    try {
+      if (method === 'popup') {
+        await login();
+      } else {
+        await loginRedirect();
+      }
+    } catch (err: any) {
+      console.error('Login Error:', err);
+      setLoginError(err.code ? `${err.code}: ${err.message}` : err.message);
+      setIsLoggingIn(false);
+    }
   };
 
   if (!authReady) {
@@ -60,12 +77,48 @@ export function MainLayout() {
               </div>
             </div>
 
+            {loginError && (
+              <div className="w-full text-left bg-red-50 text-red-700 p-4 rounded-xl mb-4 text-sm border border-red-100">
+                <p className="font-semibold mb-1">Login Failed</p>
+                <p className="font-mono text-xs opacity-80 break-all">{loginError}</p>
+                {loginError.includes('unauthorized-domain') && (
+                  <p className="mt-2 text-xs">
+                    Please ensure this exact domain ({window.location.hostname}) is added to Firebase Console → Authentication → Settings → Authorized Domains.
+                  </p>
+                )}
+                {loginError.includes('popup-closed-by-user') && (
+                  <p className="mt-2 text-xs">
+                    Popup was closed. If popups are being blocked, please use the <strong>"Sign in with Redirect"</strong> button below.
+                  </p>
+                )}
+                {loginError.includes('network-request-failed') && (
+                  <p className="mt-2 text-xs">
+                    Network error (3rd-party cookies blocked). Because this app is running in an AI Studio preview iframe, Google login gets blocked by Safari or strict tracking protection. <br/><br/>
+                    <strong>Fix:</strong> Click the <strong>"Open in new tab"</strong> icon at the top right of the AI Studio preview panel to open the app in its own window, and login will work.
+                  </p>
+                )}
+              </div>
+            )}
+
             <button
-              onClick={login}
-              className="w-full py-4 px-6 bg-stone-900 text-white rounded-2xl font-semibold flex items-center justify-center gap-3 hover:bg-stone-800 transition-all active:scale-[0.98] shadow-xl shadow-stone-900/10 mb-4"
+              disabled={isLoggingIn}
+              onClick={() => handleLogin('popup')}
+              className="w-full py-4 px-6 bg-stone-900 text-white rounded-2xl font-semibold flex items-center justify-center gap-3 hover:bg-stone-800 transition-all active:scale-[0.98] shadow-xl shadow-stone-900/10 mb-3 disabled:opacity-50 disabled:cursor-wait"
             >
-              <LogIn className="w-5 h-5" />
+              {isLoggingIn ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <LogIn className="w-5 h-5" />
+              )}
               Sign in with Google
+            </button>
+
+            <button
+              disabled={isLoggingIn}
+              onClick={() => handleLogin('redirect')}
+              className="w-full py-3 px-6 bg-stone-100 text-stone-600 rounded-2xl font-medium flex items-center justify-center gap-2 hover:bg-stone-200 transition-all active:scale-[0.98] mb-4 text-sm disabled:opacity-50"
+            >
+              Sign in with Redirect (Try if popup fails)
             </button>
 
             {deferredPrompt && (

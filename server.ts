@@ -14,40 +14,96 @@ async function startServer() {
     try {
       const fetch = (await import('node-fetch')).default;
       
-      // Fetch Gold Spot Price in USD (Troy Ounce)
-      const goldResponse = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/GC=F', {
-        headers: {
-          'User-Agent': 'Mozilla/5.0'
+      const targetUrl = req.query.url ? String(req.query.url) : 'https://jjsjo.com/';
+      
+      const response = await fetch(targetUrl);
+      if (!response.ok) {
+        throw new Error(`Scrape fetch failed from ${targetUrl}: ${response.statusText}`);
+      }
+      
+      const html = await response.text();
+      
+      // Match the 21K row and extract the selling price
+      const match21k = html.match(/21 K\s*<\/td>\s*<td>([\d.]+)<\/td>/i);
+      
+      if (!match21k || !match21k[1]) {
+        throw new Error(`Could not parse 21K price from ${targetUrl}`);
+      }
+      
+      const localGramPrice21kJod = parseFloat(match21k[1]);
+      
+      if (isNaN(localGramPrice21kJod)) {
+         throw new Error('Parsed 21K price is not a number');
+      }
+
+      // Convert from local gram price to English Coin price (8g)
+      // As per user, just multiply the gram price by 8
+      const finalCoinPriceJod = localGramPrice21kJod * 8;
+      
+      res.json({ 
+        price: finalCoinPriceJod, 
+        currency: 'JOD',
+        meta: {
+          localGram21k: localGramPrice21kJod,
+          source: targetUrl,
+          timestamp: new Date().toISOString()
         }
       });
-      if (!goldResponse.ok) throw new Error(`Gold fetch failed: ${goldResponse.statusText}`);
-      const goldData = await goldResponse.json() as any;
-      const priceOzUsd = goldData?.chart?.result?.[0]?.meta?.regularMarketPrice;
-      if (!priceOzUsd || typeof priceOzUsd !== 'number') throw new Error('Invalid gold data');
-
-      // Fetch USD to JOD exchange rate
-      const fxResponse = await fetch('https://open.er-api.com/v6/latest/USD');
-      if (!fxResponse.ok) throw new Error(`FX fetch failed: ${fxResponse.statusText}`);
-      const fxData = await fxResponse.json() as any;
-      const usdToJod = fxData?.rates?.JOD;
-      if (!usdToJod) throw new Error('Invalid FX data');
-
-      // Calculate 8g 21k coin price in JOD
-      // 1 Troy Ounce = 31.1034768 grams
-      // 24k price
-      const pricePerGramUsd = priceOzUsd / 31.1034768;
-      // 21k price
-      const pricePerGram21kUsd = pricePerGramUsd * (21 / 24);
-      // 8g coin
-      const price8g21kUsd = pricePerGram21kUsd * 8;
-      // convert to JOD and add making charge if applicable (typically 2-5 JOD, let's keep it pure or add a small margin?)
-      // Let's use pure exchange unless otherwise specified.
-      const price8g21kJod = price8g21kUsd * usdToJod;
-      
-      res.json({ price: price8g21kJod, currency: 'JOD' });
     } catch (error) {
       console.error('Error fetching gold price:', error);
       res.status(500).json({ error: 'Failed to fetch gold price', details: String(error) });
+    }
+  });
+
+  // API Route for fetching gold API statistics
+  app.get('/api/gold-stats', async (req, res) => {
+    try {
+      const fetch = (await import('node-fetch')).default;
+      
+      const goldApiKey = process.env.GOLD_API_KEY;
+      if (!goldApiKey) {
+        throw new Error('GOLD_API_KEY is not configured on the server environment variables.');
+      }
+
+      const statsResponse = await fetch('https://www.goldapi.io/api/stat', {
+        headers: {
+          'x-access-token': goldApiKey,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!statsResponse.ok) {
+        throw new Error(`Gold API stats fetch failed: ${statsResponse.statusText}`);
+      }
+      
+      const statsData = await statsResponse.json();
+      res.json(statsData);
+    } catch (error) {
+      console.error('Error fetching gold stats:', error);
+      res.status(500).json({ error: 'Failed to fetch gold api stats', details: String(error) });
+    }
+  });
+
+  // API Route for fetching gold API health status
+  app.get('/api/gold-status', async (req, res) => {
+    try {
+      const fetch = (await import('node-fetch')).default;
+      
+      const statusResponse = await fetch('https://www.goldapi.io/api/status', {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!statusResponse.ok) {
+        throw new Error(`Gold API status fetch failed: ${statusResponse.statusText}`);
+      }
+      
+      const statusData = await statusResponse.json();
+      res.json(statusData);
+    } catch (error) {
+      console.error('Error fetching gold status:', error);
+      res.status(500).json({ error: 'Failed to fetch gold api status', details: String(error) });
     }
   });
 

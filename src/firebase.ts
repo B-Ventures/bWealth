@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut, setPersistence, inMemoryPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -8,7 +8,32 @@ export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-export const loginWithGoogle = () => signInWithPopup(auth, googleProvider);
+export const loginWithGoogle = async () => {
+  // In some iframe environments (like AI Studio preview), local storage/cookies might be restricted.
+  // We attempt to set local persistence but fall back to memory if it fails.
+  try {
+    await setPersistence(auth, browserLocalPersistence);
+  } catch (e) {
+    console.warn('Local persistence failed, attempting memory persistence:', e);
+    try {
+      await setPersistence(auth, inMemoryPersistence);
+    } catch (me) {
+      console.error('Persistence setup failed entirely:', me);
+    }
+  }
+  return signInWithPopup(auth, googleProvider);
+};
+
+export const loginWithGoogleRedirect = async () => {
+  try {
+    await setPersistence(auth, browserLocalPersistence);
+  } catch (e) {
+    try {
+      await setPersistence(auth, inMemoryPersistence);
+    } catch (me) {}
+  }
+  return signInWithRedirect(auth, googleProvider);
+};
 export const logout = () => signOut(auth);
 
 // --- Step 3 Error Handling ---

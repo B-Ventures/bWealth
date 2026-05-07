@@ -10,11 +10,12 @@ import {
   updateDoc,
   getDocFromServer
 } from 'firebase/firestore';
-import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged, getRedirectResult, User as FirebaseUser } from 'firebase/auth';
 import { 
   db, 
   auth, 
   loginWithGoogle, 
+  loginWithGoogleRedirect,
   logout, 
   handleFirestoreError, 
   OperationType 
@@ -25,6 +26,8 @@ interface StoreContextType {
   state: AppState;
   user: FirebaseUser | null;
   authReady: boolean;
+  loginError: string | null;
+  setLoginError: (error: string | null) => void;
   addBeneficiary: (b: Omit<Beneficiary, 'id'>, initialCash?: number, initialGold?: number) => void;
   addDeposit: (d: Omit<Deposit, 'id'>) => void;
   updateDepositStatus: (id: string, status: 'pending' | 'completed') => void;
@@ -32,10 +35,14 @@ interface StoreContextType {
   addRecurringConfig: (r: Omit<RecurringConfig, 'id' | 'nextDate'>) => void;
   addGoldInvestment: (g: Omit<GoldInvestment, 'id'>) => void;
   updateGoldPrice: (price: number) => void;
+  updateGoldSourceUrl: (url: string) => void;
   importData: (data: AppState) => void;
   deleteBeneficiary: (id: string) => void;
-  login: () => void;
+  login: () => Promise<any>;
+  loginRedirect: () => Promise<any>;
   logout: () => void;
+  syncGoldPrice: () => Promise<void>;
+  isSyncing: boolean;
 }
 
 const StoreContext = createContext<StoreContextType | null>(null);
@@ -43,7 +50,9 @@ const StoreContext = createContext<StoreContextType | null>(null);
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [state, setState] = useState<AppState>(DEFAULT_STATE);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Validate Connection to Firestore (as required by instructions)
   useEffect(() => {
@@ -59,8 +68,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     testConnection();
   }, []);
 
-  // Auth Listener
+  // Auth Listener + Redirect Result
   useEffect(() => {
+    const handleRedirect = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result?.user) {
+          console.log("Logged in via redirect:", result.user.email);
+        }
+      } catch (err: any) {
+        console.error("Redirect Result Error:", err);
+        setLoginError(err.code ? `${err.code}: ${err.message}` : err.message);
+      }
+    };
+    handleRedirect();
+
     return onAuthStateChanged(auth, (u) => {
       setUser(u);
       setAuthReady(true);
@@ -83,7 +105,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setState(prev => ({
           ...prev,
           currency: data.currency || prev.currency,
-          currentGoldPricePerUnit: data.lastGoldPrice || prev.currentGoldPricePerUnit
+          currentGoldPricePerUnit: data.lastGoldPrice || prev.currentGoldPricePerUnit,
+          previousGoldPricePerUnit: data.previousGoldPrice || prev.previousGoldPricePerUnit,
+          lastSyncedAt: data.lastSyncedAt || prev.lastSyncedAt,
+          goldSourceUrl: data.goldSourceUrl || prev.goldSourceUrl
         }));
       } else {
         // Init user doc
@@ -124,53 +149,30 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   // Fetch real gold price
-  useEffect(() => {
-    async function fetchGoldPrice() {
-      try {
-        // Since we are moving to GitHub Pages, we can't use our own /api/gold-price backend.
-        // We attempt to fetch directly. Note: Many finance APIs have CORS restrictions.
-        // If Yahoo fails, we can try a fallback or just use the last stored price.
-        
-        // 1. Fetch USD to JOD exchange rate (usually CORS-friendly)
-        const fxResponse = await fetch('https://open.er-api.com/v6/latest/USD');
-        if (!fxResponse.ok) throw new Error(`FX fetch failed: ${fxResponse.statusText}`);
-        const fxData = await fxResponse.json();
-        const usdToJod = fxData?.rates?.JOD;
-        if (!usdToJod) throw new Error('Invalid FX data');
-
-        // 2. Fetch Gold Spot Price (USD / Troy Ounce)
-        // We'll try a CORS-friendly public API if possible, or stay with Yahoo and handle errors.
-        // For demonstration/migration, we'll use a reliable public data source if Yahoo blocks browser.
-        const goldResponse = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/GC=F', {
-          // Browser fetch to Yahoo usually gets BLOCKED by CORS.
-          // In a real production static app, you'd use a service like GoldAPI.io (requires key)
-          // or a Firebase Cloud Function for proxying.
-        });
-
-        if (goldResponse.ok) {
-          const goldData = await goldResponse.json();
-          const priceOzUsd = goldData?.chart?.result?.[0]?.meta?.regularMarketPrice;
-          if (priceOzUsd) {
-            const pricePerGramUsd = priceOzUsd / 31.1034768;
-            const pricePerGram21kUsd = pricePerGramUsd * (21 / 24);
-            const price8g21kUsd = pricePerGram21kUsd * 8;
-            const price8g21kJod = price8g21kUsd * usdToJod;
-            updateGoldPrice(price8g21kJod);
-          }
-        } else {
-           // Fallback/Warning: If this fails in the browser, it confirms CORS is an issue.
-           // In such case, the user will rely on manual updates or the last price from Firestore.
-           console.warn("Direct Yahoo Finance fetch blocked by CORS. Consider using a dedicated gold price API key.");
+  const syncGoldPrice = async () => {
+    if (!user || isSyncing) return;
+    setIsSyncing(true);
+    try {
+      const goldResponse = await fetch('/api/gold-price' + (state.goldSourceUrl ? `?url=${encodeURIComponent(state.goldSourceUrl)}` : ''));
+      if (goldResponse.ok) {
+        const goldData = await goldResponse.json();
+        const price8g21kJod = goldData?.price;
+        if (price8g21kJod) {
+          await updateGoldPrice(price8g21kJod);
         }
-      } catch (error) {
-        console.error("Could not fetch real gold price client-side:", error);
+      } else {
+        console.warn("Backend /api/gold-price fetch failed.");
       }
+    } catch (error) {
+      console.error("Could not fetch real gold price:", error);
+    } finally {
+      setIsSyncing(false);
     }
-    
+  };
+
+  useEffect(() => {
     if (user) {
-      fetchGoldPrice();
-      const interval = setInterval(fetchGoldPrice, 30 * 60 * 1000); // 30 mins
-      return () => clearInterval(interval);
+      syncGoldPrice();
     }
   }, [user]);
 
@@ -283,13 +285,34 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!user) return;
     const path = `users/${user.uid}`;
     try {
-      await updateDoc(doc(db, path), { 
+      const updates: any = {
         lastGoldPrice: price,
+        lastSyncedAt: new Date().toISOString(),
         updatedAt: serverTimestamp()
-      });
+      };
+      
+      // Store previous price if it's different to show trend
+      if (state.currentGoldPricePerUnit !== price) {
+        updates.previousGoldPrice = state.currentGoldPricePerUnit;
+      }
+
+      await updateDoc(doc(db, path), updates);
     } catch (err) {
       // Don't throw if just background update
       console.warn("Could not update gold price in Firestore:", err);
+    }
+  };
+
+  const updateGoldSourceUrl = async (url: string) => {
+    if (!user) return;
+    const path = `users/${user.uid}`;
+    try {
+      await updateDoc(doc(db, path), {
+        goldSourceUrl: url,
+        updatedAt: serverTimestamp()
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
     }
   };
 
@@ -319,9 +342,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <StoreContext.Provider value={{
-      state, user, authReady, addBeneficiary, addDeposit, updateDepositStatus, deleteDeposit, 
-      addRecurringConfig, addGoldInvestment, updateGoldPrice, importData, deleteBeneficiary,
-      login: loginWithGoogle, logout
+      state, user, authReady, loginError, setLoginError,
+      addBeneficiary, addDeposit, updateDepositStatus, deleteDeposit, 
+      addRecurringConfig, addGoldInvestment, updateGoldPrice, updateGoldSourceUrl, importData, deleteBeneficiary,
+      syncGoldPrice, isSyncing,
+      login: async () => {
+        return loginWithGoogle();
+      },
+      loginRedirect: async () => {
+        return loginWithGoogleRedirect();
+      },
+      logout
     }}>
       {children}
     </StoreContext.Provider>

@@ -1,13 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store';
-import { Coins, Loader2, BellRing, Smartphone, LogOut, UserCircle } from 'lucide-react';
+import { Coins, Loader2, BellRing, Smartphone, LogOut, UserCircle, Save, Check } from 'lucide-react';
 import { formatCurrency } from '../lib/utils';
 import { requestNotificationPermission } from '../firebase';
 
 export function AppSettings() {
-  const { state, user, logout } = useStore();
+  const { state, user, logout, updateGoldSourceUrl } = useStore();
   const [notifStatus, setNotifStatus] = useState<string>('Enable Notifications');
   const [installPrompt, setInstallPrompt] = useState<any>(null);
+  
+  const [sourceUrl, setSourceUrl] = useState(state.goldSourceUrl || 'https://jjsjo.com/');
+  const [isSaved, setIsSaved] = useState(false);
+
+  useEffect(() => {
+    setSourceUrl(state.goldSourceUrl || 'https://jjsjo.com/');
+  }, [state.goldSourceUrl]);
 
   useEffect(() => {
     if (typeof Notification !== 'undefined') {
@@ -47,6 +54,12 @@ export function AppSettings() {
     } catch(e) {
       setNotifStatus('Permission Denied (Open app in new tab)');
     }
+  };
+
+  const handleSaveSource = async () => {
+    await updateGoldSourceUrl(sourceUrl);
+    setIsSaved(true);
+    setTimeout(() => setIsSaved(false), 2000);
   };
 
   return (
@@ -111,12 +124,33 @@ export function AppSettings() {
             </div>
             <div>
               <h3 className="font-display font-semibold text-stone-900 text-lg">Current Market Price</h3>
-              <p className="text-sm text-stone-500 tracking-wide mt-0.5">Live data fetching is enabled via Yahoo Finance.</p>
+              <p className="text-sm text-stone-500 tracking-wide mt-0.5">Configure source URL for daily syncing.</p>
             </div>
           </div>
         </div>
         
-        <div className="p-6">
+        <div className="p-6 space-y-6">
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-semibold text-stone-700">Scraping Source URL</label>
+            <div className="flex gap-3">
+              <input 
+                type="url"
+                value={sourceUrl}
+                onChange={e => setSourceUrl(e.target.value)}
+                placeholder="https://jjsjo.com/"
+                className="flex-1 bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all"
+              />
+              <button 
+                onClick={handleSaveSource}
+                className="px-6 py-2.5 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-sm font-medium transition-all shadow-sm active:scale-95 flex items-center gap-2"
+              >
+                {isSaved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                {isSaved ? 'Saved' : 'Save'}
+              </button>
+            </div>
+            <p className="text-xs text-stone-500">Currently optimized for parsing jjsjo.com Syndicate prices.</p>
+          </div>
+
           <div className="flex justify-between items-center bg-stone-50 p-5 rounded-2xl border border-stone-200/60 shadow-sm">
             <span className="text-sm font-medium text-stone-500 uppercase tracking-widest">Live 21K English Coin (8g) Price</span>
             <span className="text-2xl font-light tracking-tight text-amber-600">
@@ -124,7 +158,7 @@ export function AppSettings() {
             </span>
           </div>
           <p className="text-xs text-stone-400 mt-4 flex items-center gap-2 font-medium tracking-wide">
-            <Loader2 className="w-3.5 h-3.5 animate-spin"/> Price updates automatically in the background
+            <Loader2 className="w-3.5 h-3.5 animate-spin"/> Price updates automatically when you open the app or tap Sync
           </p>
         </div>
       </div>

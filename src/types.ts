@@ -46,6 +46,9 @@ export type AppState = {
   recurringConfigs: RecurringConfig[];
   goldInvestments: GoldInvestment[];
   currentGoldPricePerUnit: number;
+  previousGoldPricePerUnit?: number;
+  lastSyncedAt?: string;
+  goldSourceUrl?: string;
   currency: string;
 };
 
