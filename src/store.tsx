@@ -153,16 +153,45 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!user || isSyncing) return;
     setIsSyncing(true);
     try {
-      const goldResponse = await fetch('/api/gold-price' + (state.goldSourceUrl ? `?url=${encodeURIComponent(state.goldSourceUrl)}` : ''));
-      if (goldResponse.ok) {
-        const goldData = await goldResponse.json();
-        const price8g21kJod = goldData?.price;
-        if (price8g21kJod) {
-          await updateGoldPrice(price8g21kJod);
+      const targetUrl = state.goldSourceUrl || 'https://jjsjo.com/';
+      
+      // 1. Try our Express backend first (works in AI Studio and Docker)
+      try {
+        const goldResponse = await fetch('/api/gold-price' + (state.goldSourceUrl ? `?url=${encodeURIComponent(state.goldSourceUrl)}&t=${Date.now()}` : `?t=${Date.now()}`));
+        if (goldResponse.ok) {
+          const goldData = await goldResponse.json();
+          if (goldData?.price) {
+            await updateGoldPrice(goldData.price);
+            return;
+          }
         }
-      } else {
-        console.warn("Backend /api/gold-price fetch failed.");
+      } catch (e) {
+        console.log('Backend /api/gold-price fetch failed, falling back to allorigins...', e);
       }
+
+      // 2. Fallback for Static Deployments (GitHub Pages) via AllOrigins proxy
+      console.log('Using AllOrigins CORS proxy for static site fallback...');
+      const fallbackResponse = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&t=${Date.now()}`);
+      
+      if (!fallbackResponse.ok) {
+         throw new Error(`Fallback proxy failed: ${fallbackResponse.statusText}`);
+      }
+      
+      const fallbackData = await fallbackResponse.json();
+      const html = fallbackData.contents;
+      
+      // Scrape HTML
+      const match21k = html.match(/21 K\s*<\/td>\s*<td>([\d.]+)<\/td>/i);
+      if (match21k && match21k[1]) {
+         const localGramPrice21kJod = parseFloat(match21k[1]);
+         if (!isNaN(localGramPrice21kJod)) {
+            const finalCoinPriceJod = localGramPrice21kJod * 8;
+            await updateGoldPrice(finalCoinPriceJod);
+            return;
+         }
+      }
+      
+      throw new Error("Failed to extract price using fallback proxy.");
     } catch (error) {
       console.error("Could not fetch real gold price:", error);
     } finally {
