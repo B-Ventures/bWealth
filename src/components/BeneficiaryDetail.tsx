@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useStore } from '../store';
 import { formatCurrency, getTotalGoal, getExpectedSavings } from '../lib/utils';
 import { ArrowLeft, Target, Coins, TrendingUp, Plus, Calendar, Clock, ArrowRightLeft, Trash2 } from 'lucide-react';
-import { format, parseISO, compareAsc } from 'date-fns';
+import { format, parseISO, compareAsc, isSameDay } from 'date-fns';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 
 export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => void }) {
@@ -32,7 +32,14 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
 
   if (!beneficiary) return <div>Not found</div>;
 
-  const pendingDeposits = state.deposits.filter(d => d.beneficiaryId === id && d.status === 'pending');
+  const pendingDepositsRaw = state.deposits.filter(d => d.beneficiaryId === id && d.status === 'pending');
+  // Strict deduplication by recurringId and date to avoid showing duplicates
+  const pendingDeposits = pendingDepositsRaw.filter((d, index, self) => 
+    index === self.findIndex((t) => (
+      (t.recurringId && t.recurringId === d.recurringId && isSameDay(parseISO(t.date), parseISO(d.date))) ||
+      (!t.recurringId && t.id === d.id)
+    ))
+  );
   const completedDeps = state.deposits.filter(d => d.beneficiaryId === id && d.status === 'completed');
   const historyDeps = state.deposits.filter(d => d.beneficiaryId === id && d.status !== 'pending');
   const invs = state.goldInvestments.filter(i => i.beneficiaryId === id);
@@ -466,85 +473,89 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
               </div>
             </div>
 
-            <form onSubmit={handleDeposit} className="space-y-5">
+            <form onSubmit={handleDeposit} className="space-y-6">
               {depType === 'once' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Input Mode</label>
-                  <div className="flex bg-gray-100 p-1 rounded-xl">
+                <div className="bg-stone-50 p-4 rounded-2xl border border-stone-100">
+                  <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-3">Input Mode</label>
+                  <div className="flex bg-stone-200/50 p-1 rounded-xl">
                     <button 
                       type="button"
                       onClick={() => setCalcMode('amount')}
-                      className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${calcMode === 'amount' ? 'bg-white shadow-sm text-emerald-700' : 'text-gray-500'}`}
+                      className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${calcMode === 'amount' ? 'bg-white shadow-sm text-emerald-700' : 'text-stone-500'}`}
                     >
                       Deposit Amount
                     </button>
                     <button 
                       type="button"
                       onClick={() => setCalcMode('balance')}
-                      className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${calcMode === 'balance' ? 'bg-white shadow-sm text-emerald-700' : 'text-gray-500'}`}
+                      className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-all ${calcMode === 'balance' ? 'bg-white shadow-sm text-emerald-700' : 'text-stone-500'}`}
                     >
-                      Current Bank Balance
+                      Bank Balance
                     </button>
                   </div>
                 </div>
               )}
 
-              {calcMode === 'amount' || depType === 'recurring' ? (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Amount ({state.currency})</label>
-                  <input 
-                    type="number" 
-                    autoFocus
-                    required min="0.01" step="any"
-                    value={depAmount} onChange={e => setDepAmount(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-lg"
-                    placeholder="500.00"
-                  />
-                </div>
-              ) : (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Actual Bank Account Balance ({state.currency})</label>
-                  <input 
-                    type="number" 
-                    autoFocus
-                    required step="any"
-                    value={newBalance} onChange={e => setNewBalance(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-lg"
-                    placeholder="e.g. 1500.00"
-                  />
-                  {newBalance && (
-                    <div className={`mt-3 p-3 rounded-lg text-sm font-medium flex items-center justify-between ${parseFloat(newBalance) - totalCash > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
-                      <span>Calculated Increase:</span>
-                      <span className="font-bold">{formatCurrency(Math.max(0, parseFloat(newBalance) - totalCash), state.currency)}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Deposit Type</label>
-                <div className="flex gap-4">
-                  <label className={`flex-1 flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition-all ${depType === 'once' ? 'border-emerald-500 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-500' : 'border-gray-200 hover:border-gray-300 text-gray-600'}`}>
-                    <input type="radio" name="type" className="hidden" checked={depType === 'once'} onChange={() => setDepType('once')} />
-                    <span className="font-medium text-sm">One-Time Deposit</span>
-                  </label>
-                  <label className={`flex-1 flex flex-col items-center justify-center p-4 border rounded-xl cursor-pointer transition-all ${depType === 'recurring' ? 'border-emerald-500 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-500' : 'border-gray-200 hover:border-gray-300 text-gray-600'}`}>
-                    <input type="radio" name="type" className="hidden" checked={depType === 'recurring'} onChange={() => setDepType('recurring')} />
-                    <span className="font-medium text-sm">Recurring Setup</span>
-                  </label>
-                </div>
+              <div className="space-y-4">
+                {/* 
+                  Only show Balance input if mode is balance AND it is a one-time deposit.
+                  In all other cases (Recurring OR Manual Amount), show the Amount field.
+                */}
+                {depType === 'once' && calcMode === 'balance' ? (
+                  <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                    <label className="block text-sm font-semibold text-stone-700 mb-1.5">Current Bank Account Balance ({state.currency})</label>
+                    <input 
+                      type="number" 
+                      autoFocus
+                      required step="any"
+                      value={newBalance} onChange={e => setNewBalance(e.target.value)}
+                      className="w-full px-5 py-4 bg-stone-50 border border-stone-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-xl font-medium"
+                      placeholder="e.g. 1500.00"
+                    />
+                    {newBalance && !isNaN(parseFloat(newBalance)) && (
+                      <div className={`mt-4 p-4 rounded-2xl text-sm font-semibold flex items-center justify-between ${parseFloat(newBalance) - totalCash >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                        <span className="opacity-80">Calculated Deposit:</span>
+                        <span className="text-lg font-bold">{formatCurrency(Math.abs(parseFloat(newBalance) - totalCash), state.currency)}</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                    <label className="block text-sm font-semibold text-stone-700 mb-1.5">
+                      {depType === 'recurring' ? 'Recurring Amount' : 'Deposit Amount'} ({state.currency})
+                    </label>
+                    <input 
+                      type="number" 
+                      autoFocus
+                      required min="0.01" step="any"
+                      value={depAmount} onChange={e => setDepAmount(e.target.value)}
+                      className="w-full px-5 py-4 bg-stone-50 border border-stone-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-xl font-medium"
+                      placeholder="500.00"
+                    />
+                  </div>
+                )}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Amount ({state.currency})</label>
-                <input 
-                  type="number" 
-                  autoFocus
-                  required min="0.01" step="any"
-                  value={depAmount} onChange={e => setDepAmount(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-lg"
-                  placeholder="500.00"
-                />
+                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-3">Deposit Type</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button 
+                    type="button"
+                    onClick={() => setDepType('once')}
+                    className={`p-4 rounded-2xl border transition-all flex flex-col items-center gap-1 ${depType === 'once' ? 'border-emerald-500 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-500' : 'border-stone-200 text-stone-500 hover:border-stone-300'}`}
+                  >
+                    <Calendar className="w-5 h-5" />
+                    <span className="text-sm font-bold">One-Time</span>
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setDepType('recurring')}
+                    className={`p-4 rounded-2xl border transition-all flex flex-col items-center gap-1 ${depType === 'recurring' ? 'border-emerald-500 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-500' : 'border-stone-200 text-stone-500 hover:border-stone-300'}`}
+                  >
+                    <Clock className="w-5 h-5" />
+                    <span className="text-sm font-bold">Recurring</span>
+                  </button>
+                </div>
               </div>
 
               {depType === 'recurring' && (

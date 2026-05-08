@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { isBefore, isSameDay, addWeeks, addMonths, addYears, parseISO } from 'date-fns';
 import { 
   onSnapshot, 
@@ -156,22 +156,34 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!user || state.recurringConfigs.length === 0 || processingRef.current) return;
 
     const processRecurring = async () => {
+      if (processingRef.current) return;
       processingRef.current = true;
+      
       const now = new Date();
+      const recentlyProcessed = new Set<string>();
+
       try {
         for (const config of state.recurringConfigs) {
           let currentNextDate = parseISO(config.nextDate);
+          let finalNextDate = currentNextDate;
+          let hasChange = false;
           
-          // If nextDate is in the past or today, we need to process it
+          // Process all missed occurrences for this config
           while (isBefore(currentNextDate, now) || isSameDay(currentNextDate, now)) {
             const dateStr = currentNextDate.toISOString();
+            const dateKey = dateStr.replace(/[:.]/g, '-');
+            const depId = `rec_${config.id}_${dateKey}`;
             
-            // CRITICAL: Check if a deposit for this config and date already exists
-            const alreadyExists = state.deposits.some(d => d.recurringId === config.id && d.date === dateStr);
+            // Local safety check
+            if (recentlyProcessed.has(depId)) {
+               break; 
+            }
+
+            // Database check
+            const alreadyExists = state.deposits.some(d => d.id === depId || (d.recurringId === config.id && isSameDay(parseISO(d.date), currentNextDate)));
             
             if (!alreadyExists) {
-              console.log(`Creating recurring deposit for ${config.id} due ${dateStr}`);
-              const depId = crypto.randomUUID();
+              console.log(`Processing recurring deposit for config ${config.id}, due ${dateStr}`);
               const depData: Omit<Deposit, 'id'> = {
                 beneficiaryId: config.beneficiaryId,
                 amount: config.amount,
@@ -187,22 +199,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
                 id: depId,
                 createdAt: serverTimestamp()
               });
-            } else {
-              console.log(`Recurring deposit for ${config.id} on ${dateStr} already exists. Advancing schedule.`);
+              recentlyProcessed.add(depId);
             }
 
-            // Calculate next date regardless of whether we created a new doc or it already existed
-            // This ensures we eventually "catch up" the nextDate in the config
-            let nextDate: Date;
-            if (config.frequency === 'weekly') nextDate = addWeeks(currentNextDate, 1);
-            else if (config.frequency === 'monthly') nextDate = addMonths(currentNextDate, 1);
-            else nextDate = addYears(currentNextDate, 1);
+            // Advance loop date
+            let nextOcc: Date;
+            if (config.frequency === 'weekly') nextOcc = addWeeks(currentNextDate, 1);
+            else if (config.frequency === 'monthly') nextOcc = addMonths(currentNextDate, 1);
+            else nextOcc = addYears(currentNextDate, 1);
 
+            currentNextDate = nextOcc;
+            finalNextDate = nextOcc;
+            hasChange = true;
+          }
+
+          // Singular update per config
+          if (hasChange && finalNextDate.toISOString() !== config.nextDate) {
             await updateDoc(doc(db, 'users', user.uid, 'recurringConfigs', config.id), {
-              nextDate: nextDate.toISOString()
+              nextDate: finalNextDate.toISOString()
             });
-
-            currentNextDate = nextDate;
           }
         }
       } catch (err) {
