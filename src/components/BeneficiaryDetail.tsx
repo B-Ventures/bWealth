@@ -13,6 +13,8 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
   
   // Deposit Form State
   const [depAmount, setDepAmount] = useState('');
+  const [calcMode, setCalcMode] = useState<'amount' | 'balance'>('amount');
+  const [newBalance, setNewBalance] = useState('');
   const [depType, setDepType] = useState<'once' | 'recurring'>('once');
   const [depFreq, setDepFreq] = useState<'weekly' | 'monthly' | 'yearly'>('monthly');
   const [depMode, setDepMode] = useState<'auto' | 'manual'>('auto');
@@ -31,11 +33,12 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
   if (!beneficiary) return <div>Not found</div>;
 
   const pendingDeposits = state.deposits.filter(d => d.beneficiaryId === id && d.status === 'pending');
-  const deps = state.deposits.filter(d => d.beneficiaryId === id && d.status !== 'pending');
+  const completedDeps = state.deposits.filter(d => d.beneficiaryId === id && d.status === 'completed');
+  const historyDeps = state.deposits.filter(d => d.beneficiaryId === id && d.status !== 'pending');
   const invs = state.goldInvestments.filter(i => i.beneficiaryId === id);
   const recs = state.recurringConfigs.filter(r => r.beneficiaryId === id);
 
-  const cashIn = deps.reduce((sum, d) => sum + d.amount, 0);
+  const cashIn = completedDeps.reduce((sum, d) => sum + d.amount, 0);
   const cashSpent = invs.filter(i => !i.isExternal).reduce((sum, i) => sum + (i.quantity * i.purchasePricePerUnit), 0);
   const totalCash = Math.max(0, cashIn - cashSpent);
   const totalCoins = invs.reduce((sum, i) => sum + i.quantity, 0);
@@ -55,7 +58,14 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
 
   const handleDeposit = (e: React.FormEvent) => {
     e.preventDefault();
-    const amt = parseFloat(depAmount);
+    let amt = parseFloat(depAmount);
+    
+    if (calcMode === 'balance') {
+      const targetBalance = parseFloat(newBalance);
+      if (isNaN(targetBalance)) return;
+      amt = targetBalance - totalCash;
+    }
+
     if (isNaN(amt) || amt <= 0) return;
 
     if (depType === 'once') {
@@ -64,7 +74,7 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
         amount: amt,
         date: new Date(depDate).toISOString(),
         isRecurring: false,
-        notes: 'Manual deposit',
+        notes: calcMode === 'balance' ? 'Balance adjustment' : 'Manual deposit',
         status: 'completed'
       });
     } else {
@@ -77,6 +87,7 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
       });
     }
     setDepAmount('');
+    setNewBalance('');
     setActiveTab('overview');
   };
 
@@ -122,7 +133,7 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
   // Build Chart Data
   // We need a timeline of value. For simplicity, we create cumulative events.
   const chartEvents = [
-    ...deps.map(d => ({ date: parseISO(d.date), type: 'dep', val: d.amount, isExternal: false })),
+    ...completedDeps.map(d => ({ date: parseISO(d.date), type: 'dep', val: d.amount, isExternal: false })),
     ...invs.map(i => ({ date: parseISO(i.date), type: 'inv', val: i.quantity, isExternal: i.isExternal }))
   ].sort((a, b) => compareAsc(a.date, b.date));
 
@@ -266,19 +277,36 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
 
             {pendingDeposits.length > 0 && (
               <div className="pt-2">
-                <h3 className="text-xl font-display font-semibold text-rose-600 mb-5 flex items-center gap-2">
-                  <Clock className="w-6 h-6" /> Pending Deposits
-                </h3>
-                <div className="space-y-3">
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="text-xl font-display font-semibold text-rose-600 flex items-center gap-2">
+                    <Clock className="w-6 h-6" /> Action Required
+                  </h3>
+                  <span className="px-3 py-1 bg-rose-100 text-rose-600 text-[11px] font-bold rounded-full uppercase tracking-widest">
+                    {pendingDeposits.length} Pending
+                  </span>
+                </div>
+                <div className="space-y-4">
                   {pendingDeposits.map(d => (
-                    <div key={d.id} className="p-5 bg-rose-50 border border-rose-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div key={d.id} className="p-6 bg-rose-50/50 border border-rose-100 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-6 backdrop-blur-sm shadow-sm transition-all hover:shadow-md hover:border-rose-200">
                       <div>
-                         <p className="font-semibold text-rose-900 text-lg">{formatCurrency(d.amount, state.currency)} Deposit Due</p>
-                         <p className="text-sm text-rose-700 mt-1">Scheduled for {format(parseISO(d.date), 'MMM dd, yyyy')} ({d.notes})</p>
+                         <p className="font-semibold text-rose-900 text-xl tracking-tight">{formatCurrency(d.amount, state.currency)} Recurring Deposit</p>
+                         <p className="text-sm text-rose-700/70 mt-1 font-medium italic flex items-center gap-1.5">
+                           <Calendar className="w-3.5 h-3.5" /> Due {format(parseISO(d.date), 'MMMM dd, yyyy')}
+                         </p>
                       </div>
-                      <div className="flex gap-2 w-full sm:w-auto">
-                         <button onClick={() => updateDepositStatus(d.id, 'completed')} className="flex-1 sm:flex-none px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-sm font-medium transition-colors shadow-sm focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2">Confirm</button>
-                         <button onClick={() => deleteDeposit(d.id)} className="flex-1 sm:flex-none px-6 py-2.5 bg-white text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl text-sm font-medium transition-colors focus:ring-2 focus:ring-rose-500 focus:ring-offset-2">Skip</button>
+                      <div className="flex gap-3 w-full md:w-auto">
+                         <button 
+                            onClick={() => updateDepositStatus(d.id, 'completed')} 
+                            className="flex-1 md:flex-none px-8 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-sm font-bold transition-all shadow-sm hover:shadow-md active:scale-95 flex items-center justify-center gap-2"
+                         >
+                            <TrendingUp className="w-4 h-4" /> Deposit Now
+                         </button>
+                         <button 
+                            onClick={() => updateDepositStatus(d.id, 'skipped')} 
+                            className="flex-1 md:flex-none px-8 py-3 bg-white text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-2xl text-sm font-bold transition-all active:scale-95"
+                         >
+                            Skip
+                         </button>
                       </div>
                     </div>
                   ))}
@@ -326,12 +354,12 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
                 <h3 className="text-lg font-display font-semibold text-stone-900 mb-5 flex items-center gap-2">
                   <Clock className="w-5 h-5 text-stone-400" /> Recent Activity
                 </h3>
-                {deps.length === 0 && invs.length === 0 ? (
+                {historyDeps.length === 0 && invs.length === 0 ? (
                   <p className="text-sm text-stone-400 italic bg-stone-50/50 p-5 rounded-[20px] text-center">No activity recorded yet.</p>
                 ) : (
                   <div className="space-y-3">
                     {[
-                      ...deps.map(d => ({ ...d, _type: 'dep' })),
+                      ...historyDeps.map(d => ({ ...d, _type: 'dep' })),
                       ...invs.map(i => ({ ...i, _type: 'inv' }))
                     ]
                     .sort((a, b) => compareAsc(parseISO(b.date), parseISO(a.date)))
@@ -339,19 +367,23 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
                     .map((item: any) => (
                       <div key={item.id} className="group flex items-center justify-between p-4 border border-stone-100 rounded-[20px] bg-white shadow-sm hover:shadow-md transition-all">
                         <div className="flex items-center gap-4">
-                          <div className={`p-3 rounded-[14px] ${item._type === 'dep' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
-                            {item._type === 'dep' ? <Plus className="w-4 h-4" /> : <Coins className="w-4 h-4" />}
+                          <div className={`p-3 rounded-[14px] ${
+                            item._type === 'dep' 
+                              ? (item.status === 'skipped' ? 'bg-stone-100 text-stone-400' : 'bg-emerald-50 text-emerald-600') 
+                              : 'bg-amber-50 text-amber-600'
+                          }`}>
+                            {item._type === 'dep' ? (item.status === 'skipped' ? <ArrowRightLeft className="w-4 h-4" /> : <Plus className="w-4 h-4" />) : <Coins className="w-4 h-4" />}
                           </div>
                           <div>
-                            <p className="text-sm font-semibold text-stone-900">
-                              {item._type === 'dep' ? 'Deposit' : 'Bought Gold'}
-                              {item.isRecurring && <span className="ml-2 text-[10px] bg-emerald-100/50 text-emerald-700 px-2 py-0.5 rounded-full uppercase font-bold tracking-wider">Auto</span>}
+                            <p className={`text-sm font-semibold ${item.status === 'skipped' ? 'text-stone-400' : 'text-stone-900'}`}>
+                              {item._type === 'dep' ? (item.status === 'skipped' ? 'Skipped Deposit' : 'Deposit') : 'Bought Gold'}
+                              {item.isRecurring && <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full uppercase font-bold tracking-wider ${item.status === 'skipped' ? 'bg-stone-100 text-stone-400' : 'bg-emerald-100/50 text-emerald-700'}`}>Auto</span>}
                             </p>
                             <p className="text-xs text-stone-500 font-medium tracking-wide mt-0.5">{format(parseISO(item.date), 'MMM dd, yyyy')} {item.notes ? `• ${item.notes}` : ''}</p>
                           </div>
                         </div>
-                        <p className={`font-semibold tracking-tight ${item._type === 'dep' ? 'text-emerald-600' : 'text-stone-900'}`}>
-                          {item._type === 'dep' ? '+' : '-'}{formatCurrency(item._type === 'dep' ? item.amount : item.quantity * item.purchasePricePerUnit, state.currency)}
+                        <p className={`font-semibold tracking-tight ${item.status === 'skipped' ? 'text-stone-300 line-through' : (item._type === 'dep' ? 'text-emerald-600' : 'text-stone-900')}`}>
+                          {item._type === 'dep' ? (item.status === 'skipped' ? '' : '+') : '-'}{formatCurrency(item._type === 'dep' ? item.amount : item.quantity * item.purchasePricePerUnit, state.currency)}
                         </p>
                       </div>
                     ))}
@@ -435,6 +467,60 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
             </div>
 
             <form onSubmit={handleDeposit} className="space-y-5">
+              {depType === 'once' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Input Mode</label>
+                  <div className="flex bg-gray-100 p-1 rounded-xl">
+                    <button 
+                      type="button"
+                      onClick={() => setCalcMode('amount')}
+                      className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${calcMode === 'amount' ? 'bg-white shadow-sm text-emerald-700' : 'text-gray-500'}`}
+                    >
+                      Deposit Amount
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setCalcMode('balance')}
+                      className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${calcMode === 'balance' ? 'bg-white shadow-sm text-emerald-700' : 'text-gray-500'}`}
+                    >
+                      Current Bank Balance
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {calcMode === 'amount' || depType === 'recurring' ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Amount ({state.currency})</label>
+                  <input 
+                    type="number" 
+                    autoFocus
+                    required min="0.01" step="any"
+                    value={depAmount} onChange={e => setDepAmount(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-lg"
+                    placeholder="500.00"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Actual Bank Account Balance ({state.currency})</label>
+                  <input 
+                    type="number" 
+                    autoFocus
+                    required step="any"
+                    value={newBalance} onChange={e => setNewBalance(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-lg"
+                    placeholder="e.g. 1500.00"
+                  />
+                  {newBalance && (
+                    <div className={`mt-3 p-3 rounded-lg text-sm font-medium flex items-center justify-between ${parseFloat(newBalance) - totalCash > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                      <span>Calculated Increase:</span>
+                      <span className="font-bold">{formatCurrency(Math.max(0, parseFloat(newBalance) - totalCash), state.currency)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Deposit Type</label>
                 <div className="flex gap-4">
@@ -504,7 +590,7 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
 
               <div className="pt-4">
                 <button type="submit" className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium transition-colors shadow-sm text-lg">
-                  {depType === 'once' ? 'Add Deposit' : 'Create Recurring Plan'}
+                  {depType === 'once' ? (calcMode === 'balance' ? 'Set Balance & Add Difference' : 'Add Deposit') : 'Create Recurring Plan'}
                 </button>
               </div>
             </form>

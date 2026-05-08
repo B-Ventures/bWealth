@@ -30,7 +30,7 @@ interface StoreContextType {
   setLoginError: (error: string | null) => void;
   addBeneficiary: (b: Omit<Beneficiary, 'id'>, initialCash?: number, initialGold?: number) => void;
   addDeposit: (d: Omit<Deposit, 'id'>) => void;
-  updateDepositStatus: (id: string, status: 'pending' | 'completed') => void;
+  updateDepositStatus: (id: string, status: 'pending' | 'completed' | 'skipped') => void;
   deleteDeposit: (id: string) => void;
   addRecurringConfig: (r: Omit<RecurringConfig, 'id' | 'nextDate'>) => void;
   addGoldInvestment: (g: Omit<GoldInvestment, 'id'>) => void;
@@ -150,6 +150,71 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     };
   }, [user]);
 
+  // Process Recurring Deposits
+  const processingRef = useRef(false);
+  useEffect(() => {
+    if (!user || state.recurringConfigs.length === 0 || processingRef.current) return;
+
+    const processRecurring = async () => {
+      processingRef.current = true;
+      const now = new Date();
+      try {
+        for (const config of state.recurringConfigs) {
+          let currentNextDate = parseISO(config.nextDate);
+          
+          // If nextDate is in the past or today, we need to process it
+          while (isBefore(currentNextDate, now) || isSameDay(currentNextDate, now)) {
+            const dateStr = currentNextDate.toISOString();
+            
+            // CRITICAL: Check if a deposit for this config and date already exists
+            const alreadyExists = state.deposits.some(d => d.recurringId === config.id && d.date === dateStr);
+            
+            if (!alreadyExists) {
+              console.log(`Creating recurring deposit for ${config.id} due ${dateStr}`);
+              const depId = crypto.randomUUID();
+              const depData: Omit<Deposit, 'id'> = {
+                beneficiaryId: config.beneficiaryId,
+                amount: config.amount,
+                date: dateStr,
+                isRecurring: true,
+                recurringId: config.id,
+                notes: `${config.frequency.charAt(0).toUpperCase() + config.frequency.slice(1)} Recurring`,
+                status: config.isManual ? 'pending' : 'completed'
+              };
+
+              await setDoc(doc(db, 'users', user.uid, 'deposits', depId), {
+                ...depData,
+                id: depId,
+                createdAt: serverTimestamp()
+              });
+            } else {
+              console.log(`Recurring deposit for ${config.id} on ${dateStr} already exists. Advancing schedule.`);
+            }
+
+            // Calculate next date regardless of whether we created a new doc or it already existed
+            // This ensures we eventually "catch up" the nextDate in the config
+            let nextDate: Date;
+            if (config.frequency === 'weekly') nextDate = addWeeks(currentNextDate, 1);
+            else if (config.frequency === 'monthly') nextDate = addMonths(currentNextDate, 1);
+            else nextDate = addYears(currentNextDate, 1);
+
+            await updateDoc(doc(db, 'users', user.uid, 'recurringConfigs', config.id), {
+              nextDate: nextDate.toISOString()
+            });
+
+            currentNextDate = nextDate;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to process recurring deposit:", err);
+      } finally {
+        processingRef.current = false;
+      }
+    };
+
+    processRecurring();
+  }, [user, state.recurringConfigs, state.deposits]);
+
   // Fetch real gold price
   const syncGoldPrice = async () => {
     if (!user || isSyncing) return;
@@ -263,7 +328,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateDepositStatus = async (id: string, status: 'pending' | 'completed') => {
+  const updateDepositStatus = async (id: string, status: 'pending' | 'completed' | 'skipped') => {
     if (!user) return;
     const path = `users/${user.uid}/deposits/${id}`;
     try {

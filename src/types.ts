@@ -16,7 +16,7 @@ export type Deposit = {
   isRecurring: boolean;
   recurringId?: string;
   notes?: string;
-  status?: 'pending' | 'completed';
+  status?: 'pending' | 'completed' | 'skipped';
 };
 
 export type RecurringFrequency = 'weekly' | 'monthly' | 'yearly';
