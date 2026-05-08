@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useStore } from '../store';
 import { formatCurrency, getTotalGoal, getExpectedSavings } from '../lib/utils';
 import { Plus, Target, Coins, TrendingUp, TrendingDown, Users, RefreshCw, Minus } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, parseISO, isSameDay } from 'date-fns';
 
 export function Dashboard({ onSelect }: { onSelect: (id: string) => void }) {
   const { state, addBeneficiary, syncGoldPrice, isSyncing } = useStore();
@@ -271,7 +271,7 @@ export function Dashboard({ onSelect }: { onSelect: (id: string) => void }) {
                 <div className="flex items-center gap-4 mb-6">
                   <div className={`w-14 h-14 rounded-full flex items-center justify-center text-white text-xl font-bold ${b.avatarColor} shadow-inner relative`}>
                     {b.name.charAt(0).toUpperCase()}
-                    {state.deposits.some(d => d.beneficiaryId === b.id && d.status === 'pending') && (
+                    {pendingDeposits.some(d => d.beneficiaryId === b.id) && (
                       <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 border-2 border-white ring-2 ring-rose-500/20 shadow-sm" title="Pending deposits" />
                     )}
                   </div>

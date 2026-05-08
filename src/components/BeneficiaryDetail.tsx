@@ -32,14 +32,7 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
 
   if (!beneficiary) return <div>Not found</div>;
 
-  const pendingDepositsRaw = state.deposits.filter(d => d.beneficiaryId === id && d.status === 'pending');
-  // Strict deduplication by recurringId and date to avoid showing duplicates
-  const pendingDeposits = pendingDepositsRaw.filter((d, index, self) => 
-    index === self.findIndex((t) => (
-      (t.recurringId && t.recurringId === d.recurringId && isSameDay(parseISO(t.date), parseISO(d.date))) ||
-      (!t.recurringId && t.id === d.id)
-    ))
-  );
+  const pendingDeposits = state.deposits.filter(d => d.beneficiaryId === id && d.status === 'pending');
   const completedDeps = state.deposits.filter(d => d.beneficiaryId === id && d.status === 'completed');
   const historyDeps = state.deposits.filter(d => d.beneficiaryId === id && d.status !== 'pending');
   const invs = state.goldInvestments.filter(i => i.beneficiaryId === id);

@@ -127,8 +127,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }, (err) => handleFirestoreError(err, OperationType.GET, `users/${user.uid}/beneficiaries`));
 
     const unsubDep = onSnapshot(depColRef, (snap) => {
-      const deposits = snap.docs.map(d => ({ ...d.data(), id: d.id } as Deposit));
-      setState(prev => ({ ...prev, deposits }));
+      const allDeposits = snap.docs.map(d => ({ ...d.data(), id: d.id } as Deposit));
+      // Global deduplication: only one recurring deposit per config per day
+      const uniqueDeposits = allDeposits.filter((d, index, self) => 
+        index === self.findIndex((t) => (
+          (t.recurringId && t.recurringId === d.recurringId && isSameDay(parseISO(t.date), parseISO(d.date))) ||
+          (!t.recurringId && t.id === d.id)
+        ))
+      );
+      setState(prev => ({ ...prev, deposits: uniqueDeposits }));
     }, (err) => handleFirestoreError(err, OperationType.GET, `users/${user.uid}/deposits`));
 
     const unsubRec = onSnapshot(recColRef, (snap) => {
