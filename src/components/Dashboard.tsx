@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../store';
 import { formatCurrency, getTotalGoal, getExpectedSavings } from '../lib/utils';
-import { Plus, Target, Coins, TrendingUp, TrendingDown, Users, RefreshCw, Minus } from 'lucide-react';
+import { Plus, Target, Coins, TrendingUp, TrendingDown, Users, RefreshCw, Minus, Clock, ArrowRightLeft } from 'lucide-react';
 import { format, parseISO, isSameDay } from 'date-fns';
 
 export function Dashboard({ onSelect }: { onSelect: (id: string) => void }) {
@@ -55,7 +55,14 @@ export function Dashboard({ onSelect }: { onSelect: (id: string) => void }) {
     return cash + (coins * state.currentGoldPricePerUnit);
   };
 
-  const pendingDeposits = state.deposits.filter(d => d.status === 'pending');
+  const pendingDepositsRaw = state.deposits.filter(d => d.status === 'pending');
+  // Deduplicate: If multiple pending exist for same plan/day (e.g. legacy data), only show one
+  const pendingDeposits = pendingDepositsRaw.filter((d, index, self) => 
+    index === self.findIndex((t) => (
+      (t.recurringId && t.recurringId === d.recurringId && format(parseISO(t.date), 'yyyy-MM-dd') === format(parseISO(d.date), 'yyyy-MM-dd')) ||
+      (!t.recurringId && t.id === d.id)
+    ))
+  );
 
   // Gold trend logic
   const currentPrice = state.currentGoldPricePerUnit;
@@ -135,15 +142,36 @@ export function Dashboard({ onSelect }: { onSelect: (id: string) => void }) {
       </div>
 
       {pendingDeposits.length > 0 && (
-        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-5 flex items-center justify-between animate-pulse">
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600">
-              <div className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-rose-900">Action Required</h3>
-              <p className="text-sm text-rose-700 mt-0.5">You have {pendingDeposits.length} pending manual {pendingDeposits.length === 1 ? 'deposit' : 'deposits'} to confirm.</p>
-            </div>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-display font-semibold text-rose-600 flex items-center gap-2">
+              <Clock className="w-6 h-6" /> Action Required
+            </h3>
+            <span className="px-3 py-1 bg-rose-100 text-rose-600 text-[11px] font-bold rounded-full uppercase tracking-widest">
+              {pendingDeposits.length} Pending
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {pendingDeposits.map(d => {
+              const b = state.beneficiaries.find(bx => bx.id === d.beneficiaryId);
+              return (
+                <div key={d.id} 
+                  onClick={() => onSelect(d.beneficiaryId)}
+                  className="group p-5 bg-white border border-rose-100 hover:border-rose-300 rounded-3xl flex items-center justify-between gap-4 cursor-pointer transition-all hover:shadow-md backdrop-blur-sm"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white font-bold shadow-inner ${b?.avatarColor || 'bg-rose-500'}`}>
+                      {b?.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                       <p className="font-semibold text-stone-900 group-hover:text-rose-600 transition-colors">{b?.name}'s Savings</p>
+                       <p className="text-sm font-bold text-rose-600 tracking-tight">{formatCurrency(d.amount, state.currency)} due {format(parseISO(d.date), 'MMM dd')}</p>
+                    </div>
+                  </div>
+                  <ArrowRightLeft className="w-5 h-5 text-rose-300 group-hover:text-rose-500 transform group-hover:translate-x-1 transition-all" />
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

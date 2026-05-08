@@ -42,16 +42,19 @@ service cloud.firestore {
       return data.keys().hasAll(['name', 'avatarColor', 'createdAt'])
         && data.name is string && data.name.size() > 0 && data.name.size() <= 100
         && data.avatarColor is string && data.avatarColor.size() <= 50
+        && (data.get('birthDate', '') is string)
+        && (data.get('monthlyTarget', 0) is number)
+        && (data.get('targetAge', 0) is number)
         && data.createdAt == (resource == null ? request.time : existing().createdAt);
     }
 
     function isValidDeposit(data) {
-      return data.keys().hasAll(['beneficiaryId', 'amount', 'date', 'isRecurring', 'status', 'createdAt'])
+      return data.keys().hasAll(['beneficiaryId', 'amount', 'date', 'status', 'createdAt'])
         && isValidId(data.beneficiaryId)
         && data.amount is number && data.amount >= 0
-        && data.date is string // simplified for now, usually timestamp
-        && data.isRecurring is bool
-        && data.status in ['pending', 'completed']
+        && data.date is string
+        && (data.get('isRecurring', false) is bool)
+        && data.status in ['pending', 'completed', 'skipped']
         && data.createdAt == (resource == null ? request.time : existing().createdAt);
     }
 
@@ -60,6 +63,7 @@ service cloud.firestore {
         && isValidId(data.beneficiaryId)
         && data.amount is number && data.amount >= 0
         && data.frequency in ['weekly', 'monthly', 'yearly']
+        && (data.get('isManual', false) is bool)
         && data.createdAt == (resource == null ? request.time : existing().createdAt);
     }
 
@@ -68,6 +72,7 @@ service cloud.firestore {
         && isValidId(data.beneficiaryId)
         && data.quantity is number && data.quantity >= 0
         && data.purchasePricePerUnit is number && data.purchasePricePerUnit >= 0
+        && (data.get('isExternal', false) is bool)
         && data.createdAt == (resource == null ? request.time : existing().createdAt);
     }
 

@@ -38,7 +38,7 @@
         "isRecurring": { "type": "boolean" },
         "recurringId": { "type": "string" },
         "notes": { "type": "string" },
-        "status": { "type": "string", "enum": ["pending", "completed"] },
+        "status": { "type": "string", "enum": ["pending", "completed", "skipped"] },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["beneficiaryId", "amount", "date"]

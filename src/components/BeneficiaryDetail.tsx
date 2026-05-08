@@ -32,7 +32,13 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
 
   if (!beneficiary) return <div>Not found</div>;
 
-  const pendingDeposits = state.deposits.filter(d => d.beneficiaryId === id && d.status === 'pending');
+  const pendingDepsRaw = state.deposits.filter(d => d.beneficiaryId === id && d.status === 'pending');
+  const pendingDeposits = pendingDepsRaw.filter((d, index, self) => 
+    index === self.findIndex((t) => (
+      (t.recurringId && t.recurringId === d.recurringId && format(parseISO(t.date), 'yyyy-MM-dd') === format(parseISO(d.date), 'yyyy-MM-dd')) ||
+      (!t.recurringId && t.id === d.id)
+    ))
+  );
   const completedDeps = state.deposits.filter(d => d.beneficiaryId === id && d.status === 'completed');
   const historyDeps = state.deposits.filter(d => d.beneficiaryId === id && d.status !== 'pending');
   const invs = state.goldInvestments.filter(i => i.beneficiaryId === id);

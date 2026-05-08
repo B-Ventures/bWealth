@@ -128,14 +128,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     const unsubDep = onSnapshot(depColRef, (snap) => {
       const allDeposits = snap.docs.map(d => ({ ...d.data(), id: d.id } as Deposit));
-      // Global deduplication: only one recurring deposit per config per day
-      const uniqueDeposits = allDeposits.filter((d, index, self) => 
-        index === self.findIndex((t) => (
-          (t.recurringId && t.recurringId === d.recurringId && isSameDay(parseISO(t.date), parseISO(d.date))) ||
-          (!t.recurringId && t.id === d.id)
-        ))
-      );
-      setState(prev => ({ ...prev, deposits: uniqueDeposits }));
+      setState(prev => ({ ...prev, deposits: allDeposits }));
     }, (err) => handleFirestoreError(err, OperationType.GET, `users/${user.uid}/deposits`));
 
     const unsubRec = onSnapshot(recColRef, (snap) => {
@@ -186,8 +179,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
                break; 
             }
 
-            // Database check
-            const alreadyExists = state.deposits.some(d => d.id === depId || (d.recurringId === config.id && isSameDay(parseISO(d.date), currentNextDate)));
+            // Database check - use date string formatting for robust "same day" comparison
+            const currentDayStr = format(currentNextDate, 'yyyy-MM-dd');
+            const alreadyExists = state.deposits.some(d => 
+              d.id === depId || 
+              (d.recurringId === config.id && format(parseISO(d.date), 'yyyy-MM-dd') === currentDayStr)
+            );
             
             if (!alreadyExists) {
               console.log(`Processing recurring deposit for config ${config.id}, due ${dateStr}`);
