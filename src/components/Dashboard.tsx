@@ -38,7 +38,7 @@ export function Dashboard({ onSelect }: { onSelect: (id: string) => void }) {
 
   // Calculate totals
   const getTotalCash = (beneficiaryId: string) => {
-    const deps = state.deposits.filter(d => d.beneficiaryId === beneficiaryId && d.status !== 'pending');
+    const deps = state.deposits.filter(d => d.beneficiaryId === beneficiaryId && d.status === 'completed');
     const invs = state.goldInvestments.filter(i => i.beneficiaryId === beneficiaryId);
     const cashIn = deps.reduce((sum, d) => sum + d.amount, 0);
     const cashSpent = invs.filter(i => !i.isExternal).reduce((sum, i) => sum + (i.quantity * i.purchasePricePerUnit), 0);
