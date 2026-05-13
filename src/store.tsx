@@ -9,7 +9,8 @@ import {
   serverTimestamp,
   updateDoc,
   getDocFromServer,
-  writeBatch
+  writeBatch,
+  getDocs
 } from 'firebase/firestore';
 import { onAuthStateChanged, getRedirectResult, User as FirebaseUser } from 'firebase/auth';
 import { 
@@ -22,6 +23,7 @@ import {
   OperationType 
 } from './firebase';
 import { AppState, Beneficiary, Deposit, GoldInvestment, RecurringConfig, DEFAULT_STATE } from './types';
+import { CountryConfig, COUNTRY_CONFIGS, DEFAULT_COUNTRY, spotUsdToCoin } from './goldCountries';
 
 interface StoreContextType {
   state: AppState;
@@ -29,6 +31,7 @@ interface StoreContextType {
   authReady: boolean;
   loginError: string | null;
   setLoginError: (error: string | null) => void;
+  availableCountries: Record<string, CountryConfig>;
   addBeneficiary: (b: Omit<Beneficiary, 'id'>, initialCash?: number, initialGold?: number) => void;
   addDeposit: (d: Omit<Deposit, 'id'>) => void;
   updateDepositStatus: (id: string, status: 'pending' | 'completed' | 'skipped') => void;
@@ -36,7 +39,7 @@ interface StoreContextType {
   addRecurringConfig: (r: Omit<RecurringConfig, 'id' | 'nextDate'>) => void;
   addGoldInvestment: (g: Omit<GoldInvestment, 'id'>) => void;
   updateGoldPrice: (price: number) => void;
-  updateGoldSourceUrl: (url: string) => void;
+  updateGoldPriceCountry: (countryCode: string) => Promise<void>;
   deleteBeneficiary: (id: string) => void;
   login: () => Promise<any>;
   loginRedirect: () => Promise<any>;
@@ -53,6 +56,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [state, setState] = useState<AppState>(DEFAULT_STATE);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [availableCountries, setAvailableCountries] = useState<Record<string, CountryConfig>>(COUNTRY_CONFIGS);
 
   // Validate Connection to Firestore (as required by instructions)
   useEffect(() => {
@@ -66,6 +70,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
     }
     testConnection();
+  }, []);
+
+  // Load country configs from Firestore (falls back to hardcoded if collection is empty)
+  useEffect(() => {
+    getDocs(collection(db, 'goldCountries'))
+      .then(snap => {
+        if (snap.empty) return;
+        const fromDb: Record<string, CountryConfig> = {};
+        snap.docs.forEach(d => { fromDb[d.id] = d.data() as CountryConfig; });
+        setAvailableCountries(fromDb);
+      })
+      .catch(err => console.warn('Could not load goldCountries from Firestore, using defaults:', err));
   }, []);
 
   // Auth Listener + Redirect Result
@@ -108,13 +124,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           currentGoldPricePerUnit: data.lastGoldPrice || prev.currentGoldPricePerUnit,
           previousGoldPricePerUnit: data.previousGoldPrice || prev.previousGoldPricePerUnit,
           lastSyncedAt: data.lastSyncedAt || prev.lastSyncedAt,
-          goldSourceUrl: data.goldSourceUrl || prev.goldSourceUrl
+          goldPriceCountry: data.goldPriceCountry || prev.goldPriceCountry,
         }));
       } else {
         // Init user doc
         setDoc(userDocRef, {
           currency: 'JOD',
-          goldSourceUrl: 'https://jjsjo.com/',
+          goldPriceCountry: DEFAULT_COUNTRY,
           lastGoldPrice: 840,
           updatedAt: serverTimestamp()
         }).catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`));
@@ -234,58 +250,44 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     processRecurring();
   }, [user, state.recurringConfigs, state.deposits]);
 
-  // Fetch real gold price
+  const applySpotToPrice = async (spotUsd: number) => {
+    const countryCode = state.goldPriceCountry || DEFAULT_COUNTRY;
+    const countryConfig = availableCountries[countryCode] ?? COUNTRY_CONFIGS[DEFAULT_COUNTRY];
+    const { coin } = spotUsdToCoin(spotUsd, countryCode);
+    // Keep currency in sync with selected country
+    if (countryConfig.currency !== state.currency) {
+      await updateDoc(doc(db, 'users', user!.uid), { currency: countryConfig.currency, updatedAt: serverTimestamp() });
+    }
+    await updateGoldPrice(coin);
+  };
+
+  const METALS_LIVE_URL = 'https://api.metals.live/v1/spot';
+
   const syncGoldPrice = async () => {
     if (!user || isSyncing) return;
     setIsSyncing(true);
     try {
-      const targetUrl = state.goldSourceUrl || 'https://jjsjo.com/';
-      
-      // 1. Try our Express backend first (works in AI Studio and Docker)
+      // 1. Try Express backend (returns raw spotUsd — no scraping)
       try {
-        const goldResponse = await fetch('/api/gold-price' + (state.goldSourceUrl ? `?url=${encodeURIComponent(state.goldSourceUrl)}&t=${Date.now()}` : `?t=${Date.now()}`));
-        if (goldResponse.ok) {
-          const goldData = await goldResponse.json();
-          if (goldData?.price) {
-            await updateGoldPrice(goldData.price);
-            return;
-          }
+        const res = await fetch(`/api/gold-price?t=${Date.now()}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.spotUsd) { await applySpotToPrice(data.spotUsd); return; }
         }
       } catch (e) {
-        console.log('Backend /api/gold-price fetch failed, falling back to allorigins...', e);
+        console.log('Backend /api/gold-price unavailable, trying AllOrigins fallback...', e);
       }
 
-      // 2. Fallback for Static Deployments (GitHub Pages) via AllOrigins proxy
-      console.log('Using AllOrigins CORS proxy for static site fallback...');
-      const fallbackResponse = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&t=${Date.now()}`);
-      
-      if (!fallbackResponse.ok) {
-         throw new Error(`Fallback proxy failed: ${fallbackResponse.statusText}`);
-      }
-      
-      const fallbackData = await fallbackResponse.json();
-      const html = fallbackData.contents;
-
-      const gram21kPatterns = [
-        /21\s*K\s*<\/td>\s*<td[^>]*>([\d.]+)/i,
-        /21\s*غ\s*<\/td>\s*<td[^>]*>([\d.,]+)/i,
-        />\s*21\s*<\/td>\s*<td[^>]*>([\d.,]+)/i,
-      ];
-
-      for (const pattern of gram21kPatterns) {
-        const match = html.match(pattern);
-        if (match?.[1]) {
-          const value = parseFloat(match[1].replace(/,/g, '.'));
-          if (!isNaN(value) && value > 0) {
-            await updateGoldPrice(value * 8);
-            return;
-          }
-        }
-      }
-
-      throw new Error("Failed to extract price using fallback proxy.");
+      // 2. Static deployment fallback: metals.live via AllOrigins CORS proxy
+      const proxyRes = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(METALS_LIVE_URL)}&t=${Date.now()}`);
+      if (!proxyRes.ok) throw new Error(`AllOrigins proxy failed: ${proxyRes.statusText}`);
+      const proxyData = await proxyRes.json();
+      const parsed = typeof proxyData.contents === 'string' ? JSON.parse(proxyData.contents) : proxyData.contents;
+      const spotUsd: number = Array.isArray(parsed) ? parsed[0]?.gold : parsed?.gold;
+      if (!spotUsd || isNaN(spotUsd)) throw new Error('Unexpected response from metals.live via AllOrigins');
+      await applySpotToPrice(spotUsd);
     } catch (error) {
-      console.error("Could not fetch real gold price:", error);
+      console.error('Could not fetch gold spot price:', error);
     } finally {
       setIsSyncing(false);
     }
@@ -424,12 +426,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateGoldSourceUrl = async (url: string) => {
+  const updateGoldPriceCountry = async (countryCode: string) => {
     if (!user) return;
     const path = `users/${user.uid}`;
     try {
+      const config = availableCountries[countryCode] ?? COUNTRY_CONFIGS[DEFAULT_COUNTRY];
       await updateDoc(doc(db, path), {
-        goldSourceUrl: url,
+        goldPriceCountry: countryCode,
+        currency: config.currency,
         updatedAt: serverTimestamp()
       });
     } catch (err) {
@@ -466,8 +470,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   return (
     <StoreContext.Provider value={{
       state, user, authReady, loginError, setLoginError,
-      addBeneficiary, addDeposit, updateDepositStatus, deleteDeposit, 
-      addRecurringConfig, addGoldInvestment, updateGoldPrice, updateGoldSourceUrl, deleteBeneficiary,
+      availableCountries,
+      addBeneficiary, addDeposit, updateDepositStatus, deleteDeposit,
+      addRecurringConfig, addGoldInvestment, updateGoldPrice, updateGoldPriceCountry, deleteBeneficiary,
       syncGoldPrice, isSyncing,
       login: async () => {
         return loginWithGoogle();

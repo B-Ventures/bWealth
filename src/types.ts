@@ -48,7 +48,7 @@ export type AppState = {
   currentGoldPricePerUnit: number;
   previousGoldPricePerUnit?: number;
   lastSyncedAt?: string;
-  goldSourceUrl?: string;
+  goldPriceCountry: string;
   currency: string;
 };
 
@@ -57,7 +57,7 @@ export const DEFAULT_STATE: AppState = {
   deposits: [],
   recurringConfigs: [],
   goldInvestments: [],
-  currentGoldPricePerUnit: 840, // Default example 8g JOD
-  goldSourceUrl: 'https://jjsjo.com/',
+  currentGoldPricePerUnit: 840,
+  goldPriceCountry: 'JO',
   currency: 'JOD',
 };
