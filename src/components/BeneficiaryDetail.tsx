@@ -139,18 +139,18 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
   // Build Chart Data
   // We need a timeline of value. For simplicity, we create cumulative events.
   const chartEvents = [
-    ...completedDeps.map(d => ({ date: parseISO(d.date), type: 'dep', val: d.amount, isExternal: false })),
-    ...invs.map(i => ({ date: parseISO(i.date), type: 'inv', val: i.quantity, isExternal: i.isExternal }))
+    ...completedDeps.map(d => ({ date: parseISO(d.date), type: 'dep', val: d.amount, priceAtPurchase: 0, isExternal: false })),
+    ...invs.map(i => ({ date: parseISO(i.date), type: 'inv', val: i.quantity, priceAtPurchase: i.purchasePricePerUnit, isExternal: i.isExternal }))
   ].sort((a, b) => compareAsc(a.date, b.date));
 
   let runningCash = 0;
   let runningCoins = 0;
-  
+
   const chartData = chartEvents.map(evt => {
     if (evt.type === 'dep') runningCash += evt.val;
     else if (evt.type === 'inv') {
       if (!evt.isExternal) {
-        runningCash -= (evt.val * state.currentGoldPricePerUnit); // approximation using current price
+        runningCash -= (evt.val * evt.priceAtPurchase);
       }
       runningCoins += evt.val;
     }
