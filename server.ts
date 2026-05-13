@@ -9,7 +9,36 @@ async function startServer() {
   // JSON parsing middleware
   app.use(express.json());
 
-  const ALLOWED_GOLD_HOSTS = ['jjsjo.com', 'www.jjsjo.com'];
+  const ALLOWED_GOLD_HOSTS = [
+    'jjsjo.com',
+    'www.jjsjo.com',
+    'royanews.tv',
+    'www.royanews.tv',
+  ];
+
+  // Each pattern captures the 21K gram price from a different site's HTML structure.
+  // Listed in priority order — first match wins.
+  const GRAM_21K_PATTERNS = [
+    // jjsjo.com — English label "21 K"
+    /21\s*K\s*<\/td>\s*<td[^>]*>([\d.]+)/i,
+    // royanews.tv and similar Arabic sites — Arabic label "21 غ", sell price is first td after label
+    /21\s*غ\s*<\/td>\s*<td[^>]*>([\d.,]+)/i,
+    // Generic fallback: any row labelled "21" followed immediately by a price td
+    />\s*21\s*<\/td>\s*<td[^>]*>([\d.,]+)/i,
+  ];
+
+  function parse21kGramPrice(html: string): number | null {
+    for (const pattern of GRAM_21K_PATTERNS) {
+      const match = html.match(pattern);
+      if (match?.[1]) {
+        // Normalise thousand-separator commas (e.g. "95,500" → "95.500")
+        const normalised = match[1].replace(/,/g, '.');
+        const value = parseFloat(normalised);
+        if (!isNaN(value) && value > 0) return value;
+      }
+    }
+    return null;
+  }
 
   // API Route for fetching gold price (8g coin in JOD)
   app.get('/api/gold-price', async (req, res) => {
@@ -31,32 +60,24 @@ async function startServer() {
 
       const targetUrl = parsed.toString();
 
-      const response = await fetch(targetUrl);
+      const response = await fetch(targetUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; bWealth/1.0)' }
+      });
       if (!response.ok) {
         throw new Error(`Scrape fetch failed from ${targetUrl}: ${response.statusText}`);
       }
-      
+
       const html = await response.text();
-      
-      // Match the 21K row and extract the selling price
-      const match21k = html.match(/21 K\s*<\/td>\s*<td>([\d.]+)<\/td>/i);
-      
-      if (!match21k || !match21k[1]) {
-        throw new Error(`Could not parse 21K price from ${targetUrl}`);
-      }
-      
-      const localGramPrice21kJod = parseFloat(match21k[1]);
-      
-      if (isNaN(localGramPrice21kJod)) {
-         throw new Error('Parsed 21K price is not a number');
+      const localGramPrice21kJod = parse21kGramPrice(html);
+
+      if (localGramPrice21kJod === null) {
+        throw new Error(`Could not parse 21K price from ${targetUrl}. The page structure may have changed.`);
       }
 
-      // Convert from local gram price to English Coin price (8g)
-      // As per user, just multiply the gram price by 8
       const finalCoinPriceJod = localGramPrice21kJod * 8;
-      
-      res.json({ 
-        price: finalCoinPriceJod, 
+
+      res.json({
+        price: finalCoinPriceJod,
         currency: 'JOD',
         meta: {
           localGram21k: localGramPrice21kJod,
