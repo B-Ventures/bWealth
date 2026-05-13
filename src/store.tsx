@@ -265,18 +265,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       
       const fallbackData = await fallbackResponse.json();
       const html = fallbackData.contents;
-      
-      // Scrape HTML
-      const match21k = html.match(/21 K\s*<\/td>\s*<td>([\d.]+)<\/td>/i);
-      if (match21k && match21k[1]) {
-         const localGramPrice21kJod = parseFloat(match21k[1]);
-         if (!isNaN(localGramPrice21kJod)) {
-            const finalCoinPriceJod = localGramPrice21kJod * 8;
-            await updateGoldPrice(finalCoinPriceJod);
+
+      const gram21kPatterns = [
+        /21\s*K\s*<\/td>\s*<td[^>]*>([\d.]+)/i,
+        /21\s*غ\s*<\/td>\s*<td[^>]*>([\d.,]+)/i,
+        />\s*21\s*<\/td>\s*<td[^>]*>([\d.,]+)/i,
+      ];
+
+      for (const pattern of gram21kPatterns) {
+        const match = html.match(pattern);
+        if (match?.[1]) {
+          const value = parseFloat(match[1].replace(/,/g, '.'));
+          if (!isNaN(value) && value > 0) {
+            await updateGoldPrice(value * 8);
             return;
-         }
+          }
+        }
       }
-      
+
       throw new Error("Failed to extract price using fallback proxy.");
     } catch (error) {
       console.error("Could not fetch real gold price:", error);
