@@ -9,13 +9,28 @@ async function startServer() {
   // JSON parsing middleware
   app.use(express.json());
 
+  const ALLOWED_GOLD_HOSTS = ['jjsjo.com', 'www.jjsjo.com'];
+
   // API Route for fetching gold price (8g coin in JOD)
   app.get('/api/gold-price', async (req, res) => {
     try {
       const fetch = (await import('node-fetch')).default;
-      
-      const targetUrl = req.query.url ? String(req.query.url) : 'https://jjsjo.com/';
-      
+
+      const rawUrl = req.query.url ? String(req.query.url) : 'https://jjsjo.com/';
+
+      let parsed: URL;
+      try {
+        parsed = new URL(rawUrl);
+      } catch {
+        return res.status(400).json({ error: 'Invalid URL' });
+      }
+
+      if (parsed.protocol !== 'https:' || !ALLOWED_GOLD_HOSTS.includes(parsed.hostname)) {
+        return res.status(400).json({ error: 'URL not allowed. Only trusted gold price sources are permitted.' });
+      }
+
+      const targetUrl = parsed.toString();
+
       const response = await fetch(targetUrl);
       if (!response.ok) {
         throw new Error(`Scrape fetch failed from ${targetUrl}: ${response.statusText}`);
