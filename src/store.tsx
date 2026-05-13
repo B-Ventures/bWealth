@@ -1,14 +1,15 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { isBefore, isSameDay, addWeeks, addMonths, addYears, parseISO, format } from 'date-fns';
-import { 
-  onSnapshot, 
-  collection, 
-  doc, 
-  setDoc, 
-  deleteDoc, 
+import {
+  onSnapshot,
+  collection,
+  doc,
+  setDoc,
+  deleteDoc,
   serverTimestamp,
   updateDoc,
-  getDocFromServer
+  getDocFromServer,
+  writeBatch
 } from 'firebase/firestore';
 import { onAuthStateChanged, getRedirectResult, User as FirebaseUser } from 'firebase/auth';
 import { 
@@ -440,16 +441,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!user) return;
     const path = `users/${user.uid}/beneficiaries/${id}`;
     try {
-      await deleteDoc(doc(db, path));
-      // Cleanup related (could be done via rules or cloud functions, but we do it manually here)
-      // Note: In rules we can't delete related. Client should handle or we use batch.
-      const depsToDelete = state.deposits.filter(d => d.beneficiaryId === id);
-      const recsToDelete = state.recurringConfigs.filter(r => r.beneficiaryId === id);
-      const goldsToDelete = state.goldInvestments.filter(g => g.beneficiaryId === id);
+      const batch = writeBatch(db);
 
-      for (const d of depsToDelete) await deleteDoc(doc(db, `users/${user.uid}/deposits/${d.id}`));
-      for (const r of recsToDelete) await deleteDoc(doc(db, `users/${user.uid}/recurringConfigs/${r.id}`));
-      for (const g of goldsToDelete) await deleteDoc(doc(db, `users/${user.uid}/goldInvestments/${g.id}`));
+      batch.delete(doc(db, path));
+
+      state.deposits
+        .filter(d => d.beneficiaryId === id)
+        .forEach(d => batch.delete(doc(db, `users/${user.uid}/deposits/${d.id}`)));
+
+      state.recurringConfigs
+        .filter(r => r.beneficiaryId === id)
+        .forEach(r => batch.delete(doc(db, `users/${user.uid}/recurringConfigs/${r.id}`)));
+
+      state.goldInvestments
+        .filter(g => g.beneficiaryId === id)
+        .forEach(g => batch.delete(doc(db, `users/${user.uid}/goldInvestments/${g.id}`)));
+
+      await batch.commit();
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, path);
     }
