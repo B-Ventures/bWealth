@@ -37,7 +37,6 @@ interface StoreContextType {
   addGoldInvestment: (g: Omit<GoldInvestment, 'id'>) => void;
   updateGoldPrice: (price: number) => void;
   updateGoldSourceUrl: (url: string) => void;
-  importData: (data: AppState) => void;
   deleteBeneficiary: (id: string) => void;
   login: () => Promise<any>;
   loginRedirect: () => Promise<any>;
@@ -432,11 +431,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const importData = async (data: AppState) => {
-    // Migration logic could go here, but for now just console it
-    console.log("Import not implemented for Firestore yet");
-  };
-  
   const deleteBeneficiary = async (id: string) => {
     if (!user) return;
     const path = `users/${user.uid}/beneficiaries/${id}`;
@@ -467,7 +461,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     <StoreContext.Provider value={{
       state, user, authReady, loginError, setLoginError,
       addBeneficiary, addDeposit, updateDepositStatus, deleteDeposit, 
-      addRecurringConfig, addGoldInvestment, updateGoldPrice, updateGoldSourceUrl, importData, deleteBeneficiary,
+      addRecurringConfig, addGoldInvestment, updateGoldPrice, updateGoldSourceUrl, deleteBeneficiary,
       syncGoldPrice, isSyncing,
       login: async () => {
         return loginWithGoogle();
