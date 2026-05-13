@@ -27,6 +27,7 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
   // Convert Form State
   const [convAmount, setConvAmount] = useState(''); // in coins
   const [convDate, setConvDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [convError, setConvError] = useState('');
 
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
@@ -118,14 +119,14 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
     e.preventDefault();
     const qty = parseFloat(convAmount);
     if (isNaN(qty) || qty <= 0) return;
-    
-    // Calculate if they have enough cash based on current target price
+
     const cost = qty * state.currentGoldPricePerUnit;
     if (totalCash < cost) {
-      alert(`Not enough cash. You need ${formatCurrency(cost, state.currency)} but have ${formatCurrency(totalCash, state.currency)}`);
+      setConvError(`Not enough cash. You need ${formatCurrency(cost, state.currency)} but only have ${formatCurrency(totalCash, state.currency)}.`);
       return;
     }
 
+    setConvError('');
     addGoldInvestment({
       beneficiaryId: id,
       quantity: qty,
@@ -673,18 +674,24 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
             <form onSubmit={handleConvert} className="space-y-5">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Number of 21K English Coins (fractions allowed)</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   autoFocus
                   required min="0.01" step="any"
-                  value={convAmount} onChange={e => setConvAmount(e.target.value)}
+                  value={convAmount} onChange={e => { setConvAmount(e.target.value); setConvError(''); }}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all text-lg"
                   placeholder="e.g. 1"
                 />
-                
+
                 {convAmount && !isNaN(parseFloat(convAmount)) && (
                   <p className={`text-sm mt-2 font-medium ${(parseFloat(convAmount) * state.currentGoldPricePerUnit) > totalCash ? 'text-red-500' : 'text-gray-500'}`}>
                     Required Cash: {formatCurrency(parseFloat(convAmount) * state.currentGoldPricePerUnit, state.currency)}
+                  </p>
+                )}
+
+                {convError && (
+                  <p className="text-sm mt-2 font-medium text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                    {convError}
                   </p>
                 )}
               </div>
