@@ -256,13 +256,31 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
 
       // 2. Fallback for Static Deployments (GitHub Pages) via AllOrigins proxy
-      console.log('Using AllOrigins CORS proxy for static site fallback...');
-      const fallbackResponse = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&t=${Date.now()}`);
-      
-      if (!fallbackResponse.ok) {
-         throw new Error(`Fallback proxy failed: ${fallbackResponse.statusText}`);
+
+      // 2a. Try metals.live via AllOrigins (no key, JSON API)
+      const METALS_LIVE = 'https://api.metals.live/v1/spot';
+      const JJSJO_PREMIUM = 1.021;
+      try {
+        const mlRes = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(METALS_LIVE)}&t=${Date.now()}`);
+        if (mlRes.ok) {
+          const mlData = await mlRes.json();
+          const parsed = typeof mlData.contents === 'string' ? JSON.parse(mlData.contents) : mlData.contents;
+          const spotUsd: number = Array.isArray(parsed) ? parsed[0]?.gold : parsed?.gold;
+          if (spotUsd && !isNaN(spotUsd)) {
+            const gram21k = (spotUsd / 31.1035) * (21 / 24) * (1 / 1.41) * JJSJO_PREMIUM;
+            await updateGoldPrice(gram21k * 8);
+            return;
+          }
+        }
+      } catch (e) {
+        console.log('metals.live via AllOrigins failed, falling back to scrape:', e);
       }
-      
+
+      // 2b. Scrape the user-configured site via AllOrigins
+      console.log('Using AllOrigins CORS proxy for scrape fallback...');
+      const fallbackResponse = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&t=${Date.now()}`);
+      if (!fallbackResponse.ok) throw new Error(`Fallback proxy failed: ${fallbackResponse.statusText}`);
+
       const fallbackData = await fallbackResponse.json();
       const html = fallbackData.contents;
 

@@ -40,51 +40,68 @@ async function startServer() {
     return null;
   }
 
+  // Formula: spot (USD/oz) → 21K gram → JOD → apply 2.1% JJSJO sell-side premium → ×8 coin
+  // Factor derivation: (21/24) / 31.1035 / 1.41 × 1.021 × 8
+  const METALS_LIVE_URL = 'https://api.metals.live/v1/spot';
+  const COIN_GRAMS = 8;
+  const KARAT_FACTOR = 21 / 24;
+  const TROY_OZ_TO_GRAM = 31.1035;
+  const USD_TO_JOD = 1 / 1.41;
+  const JJSJO_PREMIUM = 1.021;
+
+  function spotUsdToCoinJod(spotUsd: number): { gram21k: number; coin: number } {
+    const gram21k = (spotUsd / TROY_OZ_TO_GRAM) * KARAT_FACTOR * USD_TO_JOD * JJSJO_PREMIUM;
+    return { gram21k, coin: gram21k * COIN_GRAMS };
+  }
+
   // API Route for fetching gold price (8g coin in JOD)
   app.get('/api/gold-price', async (req, res) => {
     try {
       const fetch = (await import('node-fetch')).default;
+      const headers = { 'User-Agent': 'Mozilla/5.0 (compatible; bWealth/1.0)' };
 
+      // 1. Primary: metals.live — no API key required
+      try {
+        const mlRes = await fetch(METALS_LIVE_URL, { headers });
+        if (mlRes.ok) {
+          const data = await mlRes.json() as any;
+          const spotUsd: number = Array.isArray(data) ? data[0]?.gold : data?.gold;
+          if (spotUsd && !isNaN(spotUsd)) {
+            const { gram21k, coin } = spotUsdToCoinJod(spotUsd);
+            return res.json({
+              price: coin,
+              currency: 'JOD',
+              meta: { localGram21k: gram21k, spotUsd, source: METALS_LIVE_URL, timestamp: new Date().toISOString() }
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('metals.live fetch failed, falling back to scrape:', e);
+      }
+
+      // 2. Fallback: scrape the user-configured gold price site
       const rawUrl = req.query.url ? String(req.query.url) : 'https://jjsjo.com/';
-
       let parsed: URL;
       try {
         parsed = new URL(rawUrl);
       } catch {
         return res.status(400).json({ error: 'Invalid URL' });
       }
-
       if (parsed.protocol !== 'https:' || !ALLOWED_GOLD_HOSTS.includes(parsed.hostname)) {
         return res.status(400).json({ error: 'URL not allowed. Only trusted gold price sources are permitted.' });
       }
-
       const targetUrl = parsed.toString();
-
-      const response = await fetch(targetUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; bWealth/1.0)' }
-      });
-      if (!response.ok) {
-        throw new Error(`Scrape fetch failed from ${targetUrl}: ${response.statusText}`);
-      }
-
-      const html = await response.text();
-      const localGramPrice21kJod = parse21kGramPrice(html);
-
-      if (localGramPrice21kJod === null) {
-        throw new Error(`Could not parse 21K price from ${targetUrl}. The page structure may have changed.`);
-      }
-
-      const finalCoinPriceJod = localGramPrice21kJod * 8;
-
-      res.json({
-        price: finalCoinPriceJod,
+      const scrapeRes = await fetch(targetUrl, { headers });
+      if (!scrapeRes.ok) throw new Error(`Scrape failed from ${targetUrl}: ${scrapeRes.statusText}`);
+      const html = await scrapeRes.text();
+      const gram21k = parse21kGramPrice(html);
+      if (gram21k === null) throw new Error(`Could not parse 21K price from ${targetUrl}. Page structure may have changed.`);
+      return res.json({
+        price: gram21k * COIN_GRAMS,
         currency: 'JOD',
-        meta: {
-          localGram21k: localGramPrice21kJod,
-          source: targetUrl,
-          timestamp: new Date().toISOString()
-        }
+        meta: { localGram21k: gram21k, source: targetUrl, timestamp: new Date().toISOString() }
       });
+
     } catch (error) {
       console.error('Error fetching gold price:', error);
       res.status(500).json({ error: 'Failed to fetch gold price', details: String(error) });
