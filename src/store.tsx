@@ -263,29 +263,60 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const METALS_LIVE_URL = 'https://api.metals.live/v1/spot';
 
+  // metals.live can return [{gold: 4690}, {silver:...}] or {gold: 4690, silver:...}
+  const extractSpotUsd = (data: any): number | null => {
+    if (Array.isArray(data)) {
+      for (const item of data) {
+        if (typeof item?.gold === 'number' && item.gold > 0) return item.gold;
+      }
+      return null;
+    }
+    return typeof data?.gold === 'number' && data.gold > 0 ? data.gold : null;
+  };
+
   const syncGoldPrice = async () => {
     if (!user || isSyncing) return;
     setIsSyncing(true);
     try {
-      // 1. Try Express backend (returns raw spotUsd — no scraping)
+      // 1. Try metals.live directly — works if the API has CORS headers (fastest, no proxy)
+      try {
+        const res = await fetch(`${METALS_LIVE_URL}?_t=${Date.now()}`);
+        if (res.ok && (res.headers.get('content-type') || '').includes('json')) {
+          const spotUsd = extractSpotUsd(await res.json());
+          if (spotUsd) { await applySpotToPrice(spotUsd); return; }
+        }
+      } catch (e) {
+        console.log('Direct metals.live failed, trying AllOrigins...', e);
+      }
+
+      // 2. metals.live via AllOrigins CORS proxy (GitHub Pages / static deployments)
+      // Cache-bust the TARGET URL so AllOrigins fetches a fresh price, not a cached one.
+      try {
+        const bustUrl = `${METALS_LIVE_URL}?_t=${Date.now()}`;
+        const proxyRes = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(bustUrl)}`);
+        if (proxyRes.ok) {
+          const proxyData = await proxyRes.json();
+          const contents = proxyData.contents;
+          const parsed = typeof contents === 'string' ? JSON.parse(contents) : contents;
+          const spotUsd = extractSpotUsd(parsed);
+          if (spotUsd) { await applySpotToPrice(spotUsd); return; }
+        }
+      } catch (e) {
+        console.log('AllOrigins proxy failed, trying backend...', e);
+      }
+
+      // 3. Express backend — available in Docker / local dev
       try {
         const res = await fetch(`/api/gold-price?t=${Date.now()}`);
-        if (res.ok) {
+        if (res.ok && (res.headers.get('content-type') || '').includes('json')) {
           const data = await res.json();
           if (data?.spotUsd) { await applySpotToPrice(data.spotUsd); return; }
         }
       } catch (e) {
-        console.log('Backend /api/gold-price unavailable, trying AllOrigins fallback...', e);
+        console.log('Backend /api/gold-price unavailable:', e);
       }
 
-      // 2. Static deployment fallback: metals.live via AllOrigins CORS proxy
-      const proxyRes = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(METALS_LIVE_URL)}&t=${Date.now()}`);
-      if (!proxyRes.ok) throw new Error(`AllOrigins proxy failed: ${proxyRes.statusText}`);
-      const proxyData = await proxyRes.json();
-      const parsed = typeof proxyData.contents === 'string' ? JSON.parse(proxyData.contents) : proxyData.contents;
-      const spotUsd: number = Array.isArray(parsed) ? parsed[0]?.gold : parsed?.gold;
-      if (!spotUsd || isNaN(spotUsd)) throw new Error('Unexpected response from metals.live via AllOrigins');
-      await applySpotToPrice(spotUsd);
+      throw new Error('All gold price sources failed — check network connectivity');
     } catch (error) {
       console.error('Could not fetch gold spot price:', error);
     } finally {
