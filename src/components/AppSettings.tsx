@@ -1,20 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store';
-import { Coins, Loader2, BellRing, Smartphone, LogOut, UserCircle, Save, Check } from 'lucide-react';
+import { CountryConfig } from '../goldCountries';
+import { Coins, Loader2, BellRing, Smartphone, LogOut, UserCircle, Check } from 'lucide-react';
 import { formatCurrency } from '../lib/utils';
 import { requestNotificationPermission } from '../firebase';
 
 export function AppSettings() {
-  const { state, user, logout, updateGoldSourceUrl } = useStore();
+  const { state, user, logout, availableCountries, updateGoldPriceCountry, syncGoldPrice } = useStore();
   const [notifStatus, setNotifStatus] = useState<string>('Enable Notifications');
   const [installPrompt, setInstallPrompt] = useState<any>(null);
-  
-  const [sourceUrl, setSourceUrl] = useState(state.goldSourceUrl || 'https://jjsjo.com/');
-  const [isSaved, setIsSaved] = useState(false);
-
-  useEffect(() => {
-    setSourceUrl(state.goldSourceUrl || 'https://jjsjo.com/');
-  }, [state.goldSourceUrl]);
+  const [countrySaved, setCountrySaved] = useState(false);
 
   useEffect(() => {
     if (typeof Notification !== 'undefined') {
@@ -37,30 +32,29 @@ export function AppSettings() {
     if (!installPrompt) return;
     installPrompt.prompt();
     const { outcome } = await installPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setInstallPrompt(null);
-    }
+    if (outcome === 'accepted') setInstallPrompt(null);
   };
 
   const handleEnableNotifications = async () => {
     setNotifStatus('Requesting...');
     try {
       await requestNotificationPermission();
-      if (Notification.permission === 'granted') {
-        setNotifStatus('Enabled');
-      } else {
-        setNotifStatus('Permission Denied (Open app in new tab)');
-      }
-    } catch(e) {
+      setNotifStatus(Notification.permission === 'granted' ? 'Enabled' : 'Permission Denied (Open app in new tab)');
+    } catch {
       setNotifStatus('Permission Denied (Open app in new tab)');
     }
   };
 
-  const handleSaveSource = async () => {
-    await updateGoldSourceUrl(sourceUrl);
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2000);
+  const handleCountryChange = async (code: string) => {
+    await updateGoldPriceCountry(code);
+    await syncGoldPrice();
+    setCountrySaved(true);
+    setTimeout(() => setCountrySaved(false), 2000);
   };
+
+  const sortedCountries = (Object.entries(availableCountries) as [string, CountryConfig][]).sort(
+    ([, a], [, b]) => a.name.localeCompare(b.name)
+  );
 
   return (
     <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -69,6 +63,7 @@ export function AppSettings() {
         <p className="text-sm text-stone-500 mt-1 tracking-wide">Manage global preferences and your secure account.</p>
       </div>
 
+      {/* Account */}
       <div className="bg-white rounded-[24px] shadow-sm border border-stone-200/60 overflow-hidden">
         <div className="p-6 border-b border-stone-100 bg-stone-50/30">
           <div className="flex items-center gap-4">
@@ -81,7 +76,7 @@ export function AppSettings() {
             </div>
           </div>
         </div>
-        
+
         <div className="p-6">
           <div className="flex items-center justify-between gap-4 p-4 bg-stone-50 rounded-2xl border border-stone-200/60 mb-6">
             <div className="flex items-center gap-3">
@@ -97,7 +92,7 @@ export function AppSettings() {
                 <p className="text-xs text-stone-500">{user?.email}</p>
               </div>
             </div>
-            <button 
+            <button
               onClick={logout}
               className="flex items-center gap-2 px-4 py-2 bg-white border border-stone-200 text-red-600 hover:bg-red-50 hover:border-red-100 rounded-xl text-sm font-semibold transition-all shadow-sm"
             >
@@ -116,6 +111,7 @@ export function AppSettings() {
         </div>
       </div>
 
+      {/* Gold Price Region */}
       <div className="bg-white rounded-[24px] shadow-sm border border-stone-200/60 overflow-hidden">
         <div className="p-6 border-b border-stone-100 bg-stone-50/30">
           <div className="flex items-center gap-4">
@@ -124,45 +120,51 @@ export function AppSettings() {
             </div>
             <div>
               <h3 className="font-display font-semibold text-stone-900 text-lg">Current Market Price</h3>
-              <p className="text-sm text-stone-500 tracking-wide mt-0.5">Configure source URL for daily syncing.</p>
+              <p className="text-sm text-stone-500 tracking-wide mt-0.5">Select your country for accurate local gold pricing.</p>
             </div>
           </div>
         </div>
-        
+
         <div className="p-6 space-y-6">
           <div className="flex flex-col gap-2">
-            <label className="text-sm font-semibold text-stone-700">Scraping Source URL</label>
-            <div className="flex gap-3">
-              <input 
-                type="url"
-                value={sourceUrl}
-                onChange={e => setSourceUrl(e.target.value)}
-                placeholder="https://jjsjo.com/"
-                className="flex-1 bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all"
-              />
-              <button 
-                onClick={handleSaveSource}
-                className="px-6 py-2.5 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-sm font-medium transition-all shadow-sm active:scale-95 flex items-center gap-2"
+            <label className="text-sm font-semibold text-stone-700">Your Country</label>
+            <div className="relative">
+              <select
+                value={state.goldPriceCountry}
+                onChange={e => handleCountryChange(e.target.value)}
+                className="w-full appearance-none bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 pr-10 text-sm focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none transition-all cursor-pointer"
               >
-                {isSaved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-                {isSaved ? 'Saved' : 'Save'}
-              </button>
+                {sortedCountries.map(([code, config]) => (
+                  <option key={code} value={code}>
+                    {config.flag}  {config.name} ({config.currency})
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                {countrySaved
+                  ? <Check className="w-4 h-4 text-emerald-500" />
+                  : <svg className="w-4 h-4 text-stone-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                }
+              </div>
             </div>
-            <p className="text-xs text-stone-500">Currently optimized for parsing jjsjo.com Syndicate prices.</p>
+            <p className="text-xs text-stone-500">
+              Prices are sourced from international spot (metals.live) and adjusted with a local market factor per country.
+            </p>
           </div>
 
           <div className="flex justify-between items-center bg-stone-50 p-5 rounded-2xl border border-stone-200/60 shadow-sm">
-            <span className="text-sm font-medium text-stone-500 uppercase tracking-widest">Live 21K English Coin (8g) Price</span>
+            <span className="text-sm font-medium text-stone-500 uppercase tracking-widest">Live 21K English Coin (8g)</span>
             <span className="text-2xl font-light tracking-tight text-amber-600">
               {formatCurrency(state.currentGoldPricePerUnit, state.currency)}
             </span>
           </div>
-          <p className="text-xs text-stone-400 mt-4 flex items-center gap-2 font-medium tracking-wide">
-            <Loader2 className="w-3.5 h-3.5 animate-spin"/> Price updates automatically when you open the app or tap Sync
+          <p className="text-xs text-stone-400 flex items-center gap-2 font-medium tracking-wide">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Price updates automatically when you open the app or tap Sync
           </p>
         </div>
       </div>
 
+      {/* Push Notifications */}
       <div className="bg-white rounded-[24px] shadow-sm border border-stone-200/60 overflow-hidden">
         <div className="p-6 border-b border-stone-100 bg-stone-50/30">
           <div className="flex items-center gap-4">
@@ -175,14 +177,13 @@ export function AppSettings() {
             </div>
           </div>
         </div>
-        
         <div className="p-6">
-          <button 
+          <button
             onClick={handleEnableNotifications}
             disabled={notifStatus === 'Enabled'}
             className={`w-full py-4 rounded-xl font-medium transition-all shadow-sm ${
-              notifStatus === 'Enabled' 
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+              notifStatus === 'Enabled'
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                 : 'bg-stone-900 text-white hover:bg-stone-800 hover:shadow-md'
             }`}
           >
@@ -191,6 +192,7 @@ export function AppSettings() {
         </div>
       </div>
 
+      {/* Install App */}
       <div className="bg-white rounded-[24px] shadow-sm border border-stone-200/60 overflow-hidden">
         <div className="p-6 border-b border-stone-100 bg-stone-50/30">
           <div className="flex items-center gap-4">
@@ -203,10 +205,9 @@ export function AppSettings() {
             </div>
           </div>
         </div>
-        
         <div className="p-6">
           {installPrompt ? (
-            <button 
+            <button
               onClick={handleInstallClick}
               className="w-full py-4 rounded-xl font-medium transition-all shadow-sm bg-sky-600 text-white hover:bg-sky-700 hover:shadow-md"
             >
