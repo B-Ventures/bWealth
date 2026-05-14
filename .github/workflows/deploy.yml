@@ -32,6 +32,8 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
+        env:
+          VITE_GOLD_API_KEY: ${{ secrets.GOLD_API_KEY }}
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
