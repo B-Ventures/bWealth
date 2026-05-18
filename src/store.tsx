@@ -46,6 +46,7 @@ interface StoreContextType {
   logout: () => void;
   syncGoldPrice: () => Promise<void>;
   isSyncing: boolean;
+  syncError: string | null;
 }
 
 const StoreContext = createContext<StoreContextType | null>(null);
@@ -56,6 +57,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [state, setState] = useState<AppState>(DEFAULT_STATE);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [availableCountries, setAvailableCountries] = useState<Record<string, CountryConfig>>(COUNTRY_CONFIGS);
 
   // Validate Connection to Firestore (as required by instructions)
@@ -266,6 +268,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const syncGoldPrice = async () => {
     if (!user || isSyncing) return;
     setIsSyncing(true);
+    setSyncError(null);
     try {
       // 1. Try Express backend (Docker/local deployment with server-side GOLD_API_KEY)
       try {
@@ -286,17 +289,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
       // 2. Static deployment fallback: goldapi.io direct (VITE_GOLD_API_KEY embedded at build time)
       const clientKey = import.meta.env.VITE_GOLD_API_KEY as string | undefined;
-      if (!clientKey) throw new Error('No gold price source available. Set VITE_GOLD_API_KEY in the build environment.');
+      if (!clientKey) throw new Error('Price sync unavailable — API key not configured.');
       const gaRes = await fetch(GOLDAPI_URL, {
         headers: { 'x-access-token': clientKey, 'Content-Type': 'application/json' }
       });
-      if (!gaRes.ok) throw new Error(`goldapi.io responded ${gaRes.status} ${gaRes.statusText}`);
+      if (!gaRes.ok) throw new Error(`Price fetch failed (${gaRes.status}). Try again later.`);
       const gaData = await gaRes.json();
       const spotUsd: number = (gaData as any)?.price;
-      if (!spotUsd || isNaN(spotUsd)) throw new Error('Unexpected response from goldapi.io');
+      if (!spotUsd || isNaN(spotUsd)) throw new Error('Unexpected response from price API.');
       await applySpotToPrice(spotUsd);
     } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown sync error.';
       console.error('Could not fetch gold spot price:', error);
+      setSyncError(msg);
     } finally {
       setIsSyncing(false);
     }
@@ -482,7 +487,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       availableCountries,
       addBeneficiary, addDeposit, updateDepositStatus, deleteDeposit,
       addRecurringConfig, addGoldInvestment, updateGoldPrice, updateGoldPriceCountry, deleteBeneficiary,
-      syncGoldPrice, isSyncing,
+      syncGoldPrice, isSyncing, syncError,
       login: async () => {
         return loginWithGoogle();
       },
