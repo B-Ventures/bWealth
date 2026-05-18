@@ -9,20 +9,28 @@ async function startServer() {
   // JSON parsing middleware
   app.use(express.json());
 
-  const METALS_LIVE_URL = 'https://api.metals.live/v1/spot';
+  const GOLDAPI_URL = 'https://www.goldapi.io/api/XAU/USD';
 
-  // Returns raw spot price in USD/oz. The client applies the country-specific formula.
+  // Returns raw spot price in USD/oz. Client applies the country-specific formula.
   app.get('/api/gold-price', async (req, res) => {
+    const goldApiKey = process.env.GOLD_API_KEY;
+    if (!goldApiKey) {
+      return res.status(503).json({ error: 'GOLD_API_KEY is not configured on this server.' });
+    }
     try {
       const fetch = (await import('node-fetch')).default;
-      const mlRes = await fetch(METALS_LIVE_URL, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; bWealth/1.0)' }
+      const gaRes = await fetch(GOLDAPI_URL, {
+        headers: {
+          'x-access-token': goldApiKey,
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (compatible; bWealth/1.0)',
+        }
       });
-      if (!mlRes.ok) throw new Error(`metals.live responded ${mlRes.status} ${mlRes.statusText}`);
-      const data = await mlRes.json() as any;
-      const spotUsd: number = Array.isArray(data) ? data[0]?.gold : data?.gold;
-      if (!spotUsd || isNaN(spotUsd)) throw new Error('Unexpected response shape from metals.live');
-      res.json({ spotUsd, source: METALS_LIVE_URL, timestamp: new Date().toISOString() });
+      if (!gaRes.ok) throw new Error(`goldapi.io responded ${gaRes.status} ${gaRes.statusText}`);
+      const data = await gaRes.json() as any;
+      const spotUsd: number = data?.price;
+      if (!spotUsd || isNaN(spotUsd)) throw new Error('Unexpected response from goldapi.io');
+      res.json({ spotUsd, source: GOLDAPI_URL, timestamp: new Date().toISOString() });
     } catch (error) {
       console.error('Error fetching gold spot price:', error);
       res.status(500).json({ error: 'Failed to fetch gold spot price', details: String(error) });
