@@ -78,12 +78,24 @@ service cloud.firestore {
 
     // --- Match Blocks ---
 
+    // Global Gold Price — written by GitHub Actions, public read
+    match /goldPrice/{document} {
+      allow read;
+      allow write: if false;
+    }
+
+    // Global Country Configs — public read
+    match /goldCountries/{document} {
+      allow read;
+      allow write: if false;
+    }
+
     // User Profile
     match /users/{userId} {
       allow get: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUser(incoming());
       allow update: if isOwner(userId) && isValidUser(incoming())
-        && incoming().diff(existing()).affectedKeys().hasOnly(['currency', 'lastGoldPrice', 'previousGoldPrice', 'lastSyncedAt', 'goldSourceUrl', 'updatedAt']);
+        && incoming().diff(existing()).affectedKeys().hasOnly(['currency', 'goldPriceCountry', 'lastGoldPrice', 'previousGoldPrice', 'lastSyncedAt', 'goldSourceUrl', 'updatedAt']);
 
       // Beneficiaries
       match /beneficiaries/{beneficiaryId} {
