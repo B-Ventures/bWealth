@@ -10,7 +10,8 @@ import {
   updateDoc,
   getDocFromServer,
   writeBatch,
-  getDocs
+  getDocs,
+  getDoc
 } from 'firebase/firestore';
 import { onAuthStateChanged, getRedirectResult, User as FirebaseUser } from 'firebase/auth';
 import { 
@@ -46,6 +47,7 @@ interface StoreContextType {
   logout: () => void;
   syncGoldPrice: () => Promise<void>;
   isSyncing: boolean;
+  syncError: string | null;
 }
 
 const StoreContext = createContext<StoreContextType | null>(null);
@@ -56,6 +58,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [state, setState] = useState<AppState>(DEFAULT_STATE);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [availableCountries, setAvailableCountries] = useState<Record<string, CountryConfig>>(COUNTRY_CONFIGS);
 
   // Validate Connection to Firestore (as required by instructions)
@@ -262,41 +265,65 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   };
 
   const GOLDAPI_URL = 'https://www.goldapi.io/api/XAU/USD';
+  const MAX_PRICE_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
 
   const syncGoldPrice = async () => {
     if (!user || isSyncing) return;
     setIsSyncing(true);
+    setSyncError(null);
     try {
-      // 1. Try Express backend (Docker/local deployment with server-side GOLD_API_KEY)
+      // 1. Firestore goldPrice/latest — written by scheduled GitHub Actions job (no CORS, no client key)
       try {
-        const res = await fetch(`/api/gold-price?t=${Date.now()}`);
-        if (res.ok) {
-          const contentType = res.headers.get('content-type') || '';
-          if (contentType.includes('application/json')) {
-            const data = await res.json();
-            if (typeof data?.spotUsd === 'number' && data.spotUsd > 0) {
-              await applySpotToPrice(data.spotUsd);
-              return;
-            }
+        const priceSnap = await getDoc(doc(db, 'goldPrice', 'latest'));
+        if (priceSnap.exists()) {
+          const d = priceSnap.data();
+          const spotUsd: number = d?.spotUsd;
+          const ts: string = d?.timestamp;
+          const ageMs = ts ? Date.now() - new Date(ts).getTime() : Infinity;
+          if (typeof spotUsd === 'number' && spotUsd > 0 && ageMs < MAX_PRICE_AGE_MS) {
+            await applySpotToPrice(spotUsd);
+            return;
           }
         }
       } catch (e) {
-        console.log('Backend /api/gold-price unavailable, trying goldapi.io directly...', e);
+        console.log('Could not read goldPrice/latest from Firestore:', e);
       }
 
-      // 2. Static deployment fallback: goldapi.io direct (VITE_GOLD_API_KEY embedded at build time)
+      // 2. Express backend (Docker/local deployment)
+      try {
+        const res = await fetch(`/api/gold-price?t=${Date.now()}`);
+        if (res.ok && (res.headers.get('content-type') || '').includes('application/json')) {
+          const data = await res.json();
+          if (typeof data?.spotUsd === 'number' && data.spotUsd > 0) {
+            await applySpotToPrice(data.spotUsd);
+            return;
+          }
+        }
+      } catch (e) {
+        console.log('Backend /api/gold-price unavailable:', e);
+      }
+
+      // 3. goldapi.io direct — works if CORS allowed and VITE_GOLD_API_KEY is set at build time
       const clientKey = import.meta.env.VITE_GOLD_API_KEY as string | undefined;
-      if (!clientKey) throw new Error('No gold price source available. Set VITE_GOLD_API_KEY in the build environment.');
-      const gaRes = await fetch(GOLDAPI_URL, {
-        headers: { 'x-access-token': clientKey, 'Content-Type': 'application/json' }
-      });
-      if (!gaRes.ok) throw new Error(`goldapi.io responded ${gaRes.status} ${gaRes.statusText}`);
-      const gaData = await gaRes.json();
-      const spotUsd: number = (gaData as any)?.price;
-      if (!spotUsd || isNaN(spotUsd)) throw new Error('Unexpected response from goldapi.io');
-      await applySpotToPrice(spotUsd);
+      if (clientKey) {
+        const gaRes = await fetch(GOLDAPI_URL, {
+          headers: { 'x-access-token': clientKey, 'Content-Type': 'application/json' }
+        });
+        if (gaRes.ok) {
+          const gaData = await gaRes.json();
+          const spotUsd: number = (gaData as any)?.price;
+          if (typeof spotUsd === 'number' && spotUsd > 0) {
+            await applySpotToPrice(spotUsd);
+            return;
+          }
+        }
+      }
+
+      throw new Error('Price data unavailable or stale. Check GitHub Actions workflow.');
     } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown sync error.';
       console.error('Could not fetch gold spot price:', error);
+      setSyncError(msg);
     } finally {
       setIsSyncing(false);
     }
@@ -482,7 +509,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       availableCountries,
       addBeneficiary, addDeposit, updateDepositStatus, deleteDeposit,
       addRecurringConfig, addGoldInvestment, updateGoldPrice, updateGoldPriceCountry, deleteBeneficiary,
-      syncGoldPrice, isSyncing,
+      syncGoldPrice, isSyncing, syncError,
       login: async () => {
         return loginWithGoogle();
       },

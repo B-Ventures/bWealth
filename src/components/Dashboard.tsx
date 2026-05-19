@@ -5,7 +5,7 @@ import { Plus, Target, Coins, TrendingUp, TrendingDown, Users, RefreshCw, Minus,
 import { format, parseISO, isSameDay } from 'date-fns';
 
 export function Dashboard({ onSelect }: { onSelect: (id: string) => void }) {
-  const { state, addBeneficiary, syncGoldPrice, isSyncing } = useStore();
+  const { state, addBeneficiary, syncGoldPrice, isSyncing, syncError } = useStore();
   const [showAdd, setShowAdd] = useState(false);
   
   // New member form
@@ -126,11 +126,15 @@ export function Dashboard({ onSelect }: { onSelect: (id: string) => void }) {
               {isSyncing ? 'Syncing...' : 'Sync Price'}
             </button>
             
-            {state.lastSyncedAt && (
+            {syncError ? (
+              <p className="text-[10px] text-rose-500 font-semibold uppercase tracking-tight">
+                ⚠ {syncError}
+              </p>
+            ) : state.lastSyncedAt ? (
               <p className="text-[10px] text-stone-400 font-medium uppercase tracking-tight">
                 Last updated: {format(new Date(state.lastSyncedAt), 'HH:mm')}
               </p>
-            )}
+            ) : null}
           </div>
         </div>
         <button 
