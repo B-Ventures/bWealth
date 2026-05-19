@@ -124,6 +124,12 @@ service cloud.firestore {
           && incoming().diff(existing()).affectedKeys().hasOnly(['quantity', 'purchasePricePerUnit', 'date', 'isExternal']);
         allow delete: if isOwner(userId) && isValidId(investmentId);
       }
+      
+      // Gold Prices
+      match /goldPrice/{document} {
+        allow read;
+        allow write: if false;
+      }
     }
   }
 }
