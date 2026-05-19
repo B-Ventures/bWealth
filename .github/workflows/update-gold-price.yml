@@ -1,0 +1,22 @@
+name: Update Gold Price
+
+on:
+  schedule:
+    - cron: '0 */1 * * *'   # every hour (goldapi.io free tier: 100 req/month)
+  workflow_dispatch:          # allow manual trigger from GitHub UI
+
+jobs:
+  update-price:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      - run: npm ci
+      - name: Fetch gold price and write to Firestore
+        run: npx tsx scripts/updateGoldPrice.ts
+        env:
+          GOLD_API_KEY: ${{ secrets.GOLD_API_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
