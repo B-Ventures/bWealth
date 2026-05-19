@@ -284,9 +284,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             await applySpotToPrice(spotUsd);
             return;
           }
+          if (ageMs >= MAX_PRICE_AGE_MS) console.warn(`goldPrice/latest is stale (${Math.round(ageMs / 60000)}min old)`);
+        } else {
+          console.warn('goldPrice/latest document does not exist in Firestore.');
         }
-      } catch (e) {
-        console.log('Could not read goldPrice/latest from Firestore:', e);
+      } catch (e: any) {
+        console.error('Firestore goldPrice/latest read failed:', e?.code ?? e?.message ?? e);
       }
 
       // 2. Express backend (Docker/local deployment)
