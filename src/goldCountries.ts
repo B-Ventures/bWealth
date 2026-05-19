@@ -53,9 +53,15 @@ export const COUNTRY_CONFIGS: Record<string, CountryConfig> = {
 
 export const DEFAULT_COUNTRY = 'JO';
 
-// Returns the 8g English Pound coin price in the country's local currency.
-export function spotUsdToCoin(spotUsd: number, countryCode: string): { gram21k: number; coin: number } {
+// Primary formula: uses price_gram_21k from goldapi.io directly.
+// coin = gramUsd21k × usdRate × premium × 8
+export function gram21kToCoin(gramUsd21k: number, countryCode: string): { gram21k: number; coin: number } {
   const config = COUNTRY_CONFIGS[countryCode] ?? COUNTRY_CONFIGS[DEFAULT_COUNTRY];
-  const gram21k = (spotUsd / 31.1035) * (21 / 24) * config.usdRate * config.premium;
-  return { gram21k, coin: gram21k * 8 };
+  const gram21kLocal = gramUsd21k * config.usdRate * config.premium;
+  return { gram21k: gram21kLocal, coin: gram21kLocal * 8 };
+}
+
+// Fallback: convert XAU/USD spot price (USD/troy-oz) → same result.
+export function spotUsdToCoin(spotUsd: number, countryCode: string): { gram21k: number; coin: number } {
+  return gram21kToCoin((spotUsd / 31.1035) * (21 / 24), countryCode);
 }
