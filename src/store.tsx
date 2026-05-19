@@ -24,7 +24,7 @@ import {
   OperationType 
 } from './firebase';
 import { AppState, Beneficiary, Deposit, GoldInvestment, RecurringConfig, DEFAULT_STATE } from './types';
-import { CountryConfig, COUNTRY_CONFIGS, DEFAULT_COUNTRY, spotUsdToCoin } from './goldCountries';
+import { CountryConfig, COUNTRY_CONFIGS, DEFAULT_COUNTRY, gram21kToCoin, spotUsdToCoin } from './goldCountries';
 
 interface StoreContextType {
   state: AppState;
@@ -253,15 +253,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     processRecurring();
   }, [user, state.recurringConfigs, state.deposits]);
 
-  const applySpotToPrice = async (spotUsd: number) => {
+  const applyGram21kToPrice = async (gramUsd21k: number) => {
     const countryCode = state.goldPriceCountry || DEFAULT_COUNTRY;
     const countryConfig = availableCountries[countryCode] ?? COUNTRY_CONFIGS[DEFAULT_COUNTRY];
-    const { coin } = spotUsdToCoin(spotUsd, countryCode);
-    // Keep currency in sync with selected country
+    const { coin } = gram21kToCoin(gramUsd21k, countryCode);
     if (countryConfig.currency !== state.currency) {
       await updateDoc(doc(db, 'users', user!.uid), { currency: countryConfig.currency, updatedAt: serverTimestamp() });
     }
     await updateGoldPrice(coin);
+  };
+
+  // Kept for Express backend fallback which returns spotUsd.
+  const applySpotToPrice = async (spotUsd: number) => {
+    return applyGram21kToPrice((spotUsd / 31.1035) * (21 / 24));
   };
 
   const GOLDAPI_URL = 'https://www.goldapi.io/api/XAU/USD';
@@ -277,16 +281,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const priceSnap = await getDoc(doc(db, 'goldPrice', 'latest'));
         if (priceSnap.exists()) {
           const d = priceSnap.data();
-          const spotUsd: number = d?.spotUsd;
+          // Prefer gramUsd21k (direct from goldapi.io), fall back to deriving it from spotUsd
+          const gramUsd21k: number = d?.gramUsd21k ?? ((d?.spotUsd / 31.1035) * (21 / 24));
           const ts: string = d?.timestamp;
           const ageMs = ts ? Date.now() - new Date(ts).getTime() : Infinity;
-          if (typeof spotUsd === 'number' && spotUsd > 0 && ageMs < MAX_PRICE_AGE_MS) {
-            await applySpotToPrice(spotUsd);
+          if (typeof gramUsd21k === 'number' && gramUsd21k > 0 && ageMs < MAX_PRICE_AGE_MS) {
+            await applyGram21kToPrice(gramUsd21k);
             return;
           }
+          if (ageMs >= MAX_PRICE_AGE_MS) console.warn(`goldPrice/latest is stale (${Math.round(ageMs / 60000)}min old)`);
+        } else {
+          console.warn('goldPrice/latest document does not exist in Firestore.');
         }
-      } catch (e) {
-        console.log('Could not read goldPrice/latest from Firestore:', e);
+      } catch (e: any) {
+        console.error('Firestore goldPrice/latest read failed:', e?.code ?? e?.message ?? e);
       }
 
       // 2. Express backend (Docker/local deployment)
