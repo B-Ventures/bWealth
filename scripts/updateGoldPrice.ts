@@ -25,7 +25,18 @@ if (!serviceAccountJson) {
   process.exit(1);
 }
 
-const serviceAccount = JSON.parse(serviceAccountJson);
+let serviceAccount: object;
+try {
+  serviceAccount = JSON.parse(serviceAccountJson);
+} catch {
+  console.error(
+    'FIREBASE_SERVICE_ACCOUNT is not valid JSON.\n' +
+    'The secret must contain the raw JSON content of your serviceAccount.json file,\n' +
+    'not a file path. Open the file, copy everything inside it, and paste it as the secret value.\n' +
+    `First 40 chars received: ${serviceAccountJson.slice(0, 40)}`
+  );
+  process.exit(1);
+}
 initializeApp({ credential: cert(serviceAccount), projectId: firebaseConfig.projectId });
 const db = getFirestore(firebaseConfig.firestoreDatabaseId);
 
