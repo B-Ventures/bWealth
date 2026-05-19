@@ -45,14 +45,16 @@ const res = await fetch('https://www.goldapi.io/api/XAU/USD', {
 });
 if (!res.ok) throw new Error(`goldapi.io responded ${res.status} ${res.statusText}`);
 const data = await res.json() as any;
+const gramUsd21k: number = data?.price_gram_21k;
 const spotUsd: number = data?.price;
-if (!spotUsd || isNaN(spotUsd)) throw new Error(`Unexpected response from goldapi.io: ${JSON.stringify(data)}`);
+if (!gramUsd21k || isNaN(gramUsd21k)) throw new Error(`Unexpected response from goldapi.io: ${JSON.stringify(data)}`);
 
 await db.collection('goldPrice').doc('latest').set({
+  gramUsd21k,
   spotUsd,
   timestamp: new Date().toISOString(),
   source: 'https://www.goldapi.io/api/XAU/USD',
 });
 
-console.log(`goldPrice/latest updated: spotUsd=${spotUsd} at ${new Date().toISOString()}`);
+console.log(`goldPrice/latest updated: gramUsd21k=${gramUsd21k}, spotUsd=${spotUsd} at ${new Date().toISOString()}`);
 process.exit(0);
