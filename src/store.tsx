@@ -269,7 +269,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   };
 
   const GOLDAPI_URL = 'https://www.goldapi.io/api/XAU/USD';
-  const MAX_PRICE_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
+  const MAX_PRICE_AGE_MS = 9 * 60 * 60 * 1000; // 9 hours (workflow runs every 8h)
 
   const syncGoldPrice = async () => {
     if (!user || isSyncing) return;
