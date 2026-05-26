@@ -2,7 +2,7 @@ name: Update Gold Price
 
 on:
   schedule:
-    - cron: '0 */1 * * *'   # every hour (goldapi.io free tier: 100 req/month)
+    - cron: '0 0,8,16 * * *'   # 3×/day at 00:00, 08:00, 16:00 UTC (≤93 req/month)
   workflow_dispatch:          # allow manual trigger from GitHub UI
 
 jobs:
