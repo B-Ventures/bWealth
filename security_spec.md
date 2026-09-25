@@ -15,7 +15,7 @@
 5. **PII Leak**: Reading all users' profiles (blanket read).
 6. **Timeline Hijack**: Setting `createdAt` to a date in the past.
 7. **Type Inconsistency**: Sending a string for `amount`.
-8. **Negative Deposit**: Sending a negative `amount` for a deposit.
+8. **Extreme Amount Overflow**: Sending an invalid non-number or NaN for `amount`.
 9. **Orphaned Deposit**: Creating a deposit with a non-existent `beneficiaryId`.
 10. **State Shortcutting**: Updating a terminal status (if we had one, but we use strict keys).
 11. **Large Payload**: Sending a 1MB notes field to exhaust storage/bandwidth.

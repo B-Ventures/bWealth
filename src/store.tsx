@@ -61,6 +61,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [availableCountries, setAvailableCountries] = useState<Record<string, CountryConfig>>(COUNTRY_CONFIGS);
 
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
   // Validate Connection to Firestore (as required by instructions)
   useEffect(() => {
     async function testConnection() {
@@ -253,19 +258,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     processRecurring();
   }, [user, state.recurringConfigs, state.deposits]);
 
-  const applyGram21kToPrice = async (gramUsd21k: number) => {
-    const countryCode = state.goldPriceCountry || DEFAULT_COUNTRY;
+  const applyGram21kToPrice = async (gramUsd21k: number, prevGramUsd21k?: number) => {
+    const countryCode = stateRef.current.goldPriceCountry || DEFAULT_COUNTRY;
     const countryConfig = availableCountries[countryCode] ?? COUNTRY_CONFIGS[DEFAULT_COUNTRY];
     const { coin } = gram21kToCoin(gramUsd21k, countryCode);
-    if (countryConfig.currency !== state.currency) {
+    const prevCoin = prevGramUsd21k ? gram21kToCoin(prevGramUsd21k, countryCode).coin : undefined;
+    if (countryConfig.currency !== stateRef.current.currency) {
       await updateDoc(doc(db, 'users', user!.uid), { currency: countryConfig.currency, updatedAt: serverTimestamp() });
     }
-    await updateGoldPrice(coin);
+    await updateGoldPrice(coin, prevCoin);
   };
 
   // Kept for Express backend fallback which returns spotUsd.
-  const applySpotToPrice = async (spotUsd: number) => {
-    return applyGram21kToPrice((spotUsd / 31.1035) * (21 / 24));
+  const applySpotToPrice = async (spotUsd: number, prevSpotUsd?: number) => {
+    const gram21k = (spotUsd / 31.1035) * (21 / 24);
+    const prevGram21k = prevSpotUsd ? (prevSpotUsd / 31.1035) * (21 / 24) : undefined;
+    return applyGram21kToPrice(gram21k, prevGram21k);
   };
 
   const GOLDAPI_URL = 'https://www.goldapi.io/api/XAU/USD';
@@ -283,10 +291,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           const d = priceSnap.data();
           // Prefer gramUsd21k (direct from goldapi.io), fall back to deriving it from spotUsd
           const gramUsd21k: number = d?.gramUsd21k ?? ((d?.spotUsd / 31.1035) * (21 / 24));
+          const prevGramUsd21k: number | undefined = d?.prevGramUsd21k;
           const ts: string = d?.timestamp;
           const ageMs = ts ? Date.now() - new Date(ts).getTime() : Infinity;
           if (typeof gramUsd21k === 'number' && gramUsd21k > 0 && ageMs < MAX_PRICE_AGE_MS) {
-            await applyGram21kToPrice(gramUsd21k);
+            await applyGram21kToPrice(gramUsd21k, prevGramUsd21k);
             return;
           }
           if (ageMs >= MAX_PRICE_AGE_MS) console.warn(`goldPrice/latest is stale (${Math.round(ageMs / 60000)}min old)`);
@@ -303,7 +312,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         if (res.ok && (res.headers.get('content-type') || '').includes('application/json')) {
           const data = await res.json();
           if (typeof data?.spotUsd === 'number' && data.spotUsd > 0) {
-            await applySpotToPrice(data.spotUsd);
+            const prevSpotUsd = typeof data?.prevCloseUsd === 'number' ? data.prevCloseUsd : undefined;
+            await applySpotToPrice(data.spotUsd, prevSpotUsd);
             return;
           }
         }
@@ -320,8 +330,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         if (gaRes.ok) {
           const gaData = await gaRes.json();
           const spotUsd: number = (gaData as any)?.price;
+          const prevCloseUsd: number = (gaData as any)?.prev_close_price;
           if (typeof spotUsd === 'number' && spotUsd > 0) {
-            await applySpotToPrice(spotUsd);
+            await applySpotToPrice(spotUsd, prevCloseUsd);
             return;
           }
         }
@@ -448,19 +459,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateGoldPrice = async (price: number) => {
+  const updateGoldPrice = async (price: number, sourcePrevPrice?: number) => {
     if (!user) return;
     const path = `users/${user.uid}`;
     try {
+      const currentState = stateRef.current;
       const updates: any = {
         lastGoldPrice: price,
         lastSyncedAt: new Date().toISOString(),
         updatedAt: serverTimestamp()
       };
       
-      // Store previous price if it's different to show trend
-      if (state.currentGoldPricePerUnit !== price) {
-        updates.previousGoldPrice = state.currentGoldPricePerUnit;
+      // Calculate previous price strictly against the latest check/sync:
+      // If the data source provided previous close price, use that.
+      // Otherwise, compare against the user's previously tracked gold price before this sync.
+      if (typeof sourcePrevPrice === 'number' && sourcePrevPrice > 0) {
+        updates.previousGoldPrice = sourcePrevPrice;
+      } else if (typeof currentState.currentGoldPricePerUnit === 'number' && currentState.currentGoldPricePerUnit > 0) {
+        updates.previousGoldPrice = currentState.currentGoldPricePerUnit;
       }
 
       await updateDoc(doc(db, path), updates);

@@ -29,8 +29,16 @@ async function startServer() {
       if (!gaRes.ok) throw new Error(`goldapi.io responded ${gaRes.status} ${gaRes.statusText}`);
       const data = await gaRes.json() as any;
       const spotUsd: number = data?.price;
+      const prevCloseUsd: number = data?.prev_close_price;
+      const gramUsd21k: number = data?.price_gram_21k;
       if (!spotUsd || isNaN(spotUsd)) throw new Error('Unexpected response from goldapi.io');
-      res.json({ spotUsd, source: GOLDAPI_URL, timestamp: new Date().toISOString() });
+      res.json({ 
+        spotUsd, 
+        prevCloseUsd: prevCloseUsd || spotUsd,
+        gramUsd21k: gramUsd21k || ((spotUsd / 31.1035) * (21 / 24)),
+        source: GOLDAPI_URL, 
+        timestamp: new Date().toISOString() 
+      });
     } catch (error) {
       console.error('Error fetching gold spot price:', error);
       res.status(500).json({ error: 'Failed to fetch gold spot price', details: String(error) });

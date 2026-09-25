@@ -64,19 +64,29 @@ export function Dashboard({ onSelect }: { onSelect: (id: string) => void }) {
     ))
   );
 
-  // Gold trend logic
+  // Gold trend logic based strictly on latest update/check/sync
   const currentPrice = state.currentGoldPricePerUnit;
   const previousPrice = state.previousGoldPricePerUnit;
   
-  const getTrend = () => {
-    if (!previousPrice || currentPrice === previousPrice) return <Minus className="w-3.5 h-3.5 text-stone-400" />;
-    if (currentPrice > previousPrice) return <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />;
-    return <TrendingDown className="w-3.5 h-3.5 text-rose-500" />;
+  const diffPercent = (previousPrice && previousPrice > 0 && currentPrice)
+    ? ((currentPrice - previousPrice) / previousPrice) * 100
+    : 0;
+
+  const isUp = diffPercent > 0.001;
+  const isDown = diffPercent < -0.001;
+  const isNeutral = !isUp && !isDown;
+
+  const getTrendIcon = () => {
+    if (isNeutral) return <Minus className="w-3.5 h-3.5 text-stone-400" />;
+    if (isUp) return <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />;
+    return <TrendingDown className="w-3.5 h-3.5 text-rose-600" />;
   };
 
-  const trendColor = !previousPrice || currentPrice === previousPrice 
-    ? 'text-stone-500' 
-    : currentPrice > previousPrice ? 'text-emerald-600' : 'text-rose-600';
+  const trendBadgeClasses = isNeutral
+    ? 'bg-stone-100 text-stone-500 border-stone-200'
+    : isUp
+      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      : 'bg-rose-50 text-rose-700 border-rose-200';
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -100,10 +110,12 @@ export function Dashboard({ onSelect }: { onSelect: (id: string) => void }) {
                       <span className="text-md font-black text-amber-900">{formatCurrency(state.currentGoldPricePerUnit, state.currency)}</span>
                     </div>
 
-                    <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full ${currentPrice > (previousPrice || 0) ? 'bg-emerald-100/50' : 'bg-rose-100/50'} ${trendColor} text-[10px] font-black tracking-widest`}>
-                      {getTrend()}
-                      {previousPrice && currentPrice !== previousPrice && (
-                        <span>{Math.abs(((currentPrice - previousPrice) / previousPrice) * 100).toFixed(2)}%</span>
+                    <div className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full border ${trendBadgeClasses} text-[10px] font-black tracking-widest`}>
+                      {getTrendIcon()}
+                      {isNeutral ? (
+                        <span>0.00%</span>
+                      ) : (
+                        <span>{isUp ? '+' : '-'}{Math.abs(diffPercent).toFixed(2)}%</span>
                       )}
                     </div>
                   </div>

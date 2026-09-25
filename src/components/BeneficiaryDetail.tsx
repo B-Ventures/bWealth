@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../store';
 import { formatCurrency, getTotalGoal, getExpectedSavings } from '../lib/utils';
-import { ArrowLeft, Target, Coins, TrendingUp, Plus, Calendar, Clock, ArrowRightLeft, Trash2 } from 'lucide-react';
+import { ArrowLeft, Target, Coins, TrendingUp, Plus, Minus, Calendar, Clock, ArrowRightLeft, Trash2 } from 'lucide-react';
 import { format, parseISO, compareAsc, isSameDay } from 'date-fns';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 
@@ -69,11 +69,16 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
     
     if (calcMode === 'balance') {
       const targetBalance = parseFloat(newBalance);
-      if (isNaN(targetBalance)) return;
+      if (isNaN(targetBalance) || targetBalance < 0) return;
       amt = targetBalance - totalCash;
+      if (amt === 0) {
+        setNewBalance('');
+        setActiveTab('overview');
+        return;
+      }
+    } else {
+      if (isNaN(amt) || amt <= 0) return;
     }
-
-    if (isNaN(amt) || amt <= 0) return;
 
     if (depType === 'once') {
       addDeposit({
@@ -81,10 +86,13 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
         amount: amt,
         date: new Date(depDate).toISOString(),
         isRecurring: false,
-        notes: calcMode === 'balance' ? 'Balance adjustment' : 'Manual deposit',
+        notes: calcMode === 'balance' 
+          ? (amt < 0 ? 'Balance adjustment (withdrawal)' : 'Balance adjustment') 
+          : 'Manual deposit',
         status: 'completed'
       });
     } else {
+      if (isNaN(amt) || amt <= 0) return;
       addRecurringConfig({
         beneficiaryId: id,
         amount: amt,
@@ -376,21 +384,35 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
                         <div className="flex items-center gap-4">
                           <div className={`p-3 rounded-[14px] ${
                             item._type === 'dep' 
-                              ? (item.status === 'skipped' ? 'bg-stone-100 text-stone-400' : 'bg-emerald-50 text-emerald-600') 
+                              ? (item.status === 'skipped' 
+                                  ? 'bg-stone-100 text-stone-400' 
+                                  : (item.amount < 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600')) 
                               : 'bg-amber-50 text-amber-600'
                           }`}>
-                            {item._type === 'dep' ? (item.status === 'skipped' ? <ArrowRightLeft className="w-4 h-4" /> : <Plus className="w-4 h-4" />) : <Coins className="w-4 h-4" />}
+                            {item._type === 'dep' 
+                              ? (item.status === 'skipped' ? <ArrowRightLeft className="w-4 h-4" /> : (item.amount < 0 ? <Minus className="w-4 h-4" /> : <Plus className="w-4 h-4" />)) 
+                              : <Coins className="w-4 h-4" />}
                           </div>
                           <div>
                             <p className={`text-sm font-semibold ${item.status === 'skipped' ? 'text-stone-400' : 'text-stone-900'}`}>
-                              {item._type === 'dep' ? (item.status === 'skipped' ? 'Skipped Deposit' : 'Deposit') : 'Bought Gold'}
+                              {item._type === 'dep' 
+                                ? (item.status === 'skipped' ? 'Skipped Deposit' : (item.amount < 0 ? 'Withdrawal / Adjustment' : 'Deposit')) 
+                                : 'Bought Gold'}
                               {item.isRecurring && <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full uppercase font-bold tracking-wider ${item.status === 'skipped' ? 'bg-stone-100 text-stone-400' : 'bg-emerald-100/50 text-emerald-700'}`}>Auto</span>}
                             </p>
                             <p className="text-xs text-stone-500 font-medium tracking-wide mt-0.5">{format(parseISO(item.date), 'MMM dd, yyyy')} {item.notes ? `• ${item.notes}` : ''}</p>
                           </div>
                         </div>
-                        <p className={`font-semibold tracking-tight ${item.status === 'skipped' ? 'text-stone-300 line-through' : (item._type === 'dep' ? 'text-emerald-600' : 'text-stone-900')}`}>
-                          {item._type === 'dep' ? (item.status === 'skipped' ? '' : '+') : '-'}{formatCurrency(item._type === 'dep' ? item.amount : item.quantity * item.purchasePricePerUnit, state.currency)}
+                        <p className={`font-semibold tracking-tight ${
+                          item.status === 'skipped' 
+                            ? 'text-stone-300 line-through' 
+                            : (item._type === 'dep' 
+                                ? (item.amount < 0 ? 'text-rose-600' : 'text-emerald-600') 
+                                : 'text-stone-900')
+                        }`}>
+                          {item._type === 'dep' 
+                            ? (item.status === 'skipped' ? '' : (item.amount < 0 ? '-' : '+')) 
+                            : '-'}{formatCurrency(Math.abs(item._type === 'dep' ? item.amount : item.quantity * item.purchasePricePerUnit), state.currency)}
                         </p>
                       </div>
                     ))}
@@ -514,8 +536,12 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
                     />
                     {newBalance && !isNaN(parseFloat(newBalance)) && (
                       <div className={`mt-4 p-4 rounded-2xl text-sm font-semibold flex items-center justify-between ${parseFloat(newBalance) - totalCash >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                        <span className="opacity-80">Calculated Deposit:</span>
-                        <span className="text-lg font-bold">{formatCurrency(Math.abs(parseFloat(newBalance) - totalCash), state.currency)}</span>
+                        <span className="opacity-80">
+                          {parseFloat(newBalance) - totalCash >= 0 ? 'Calculated Deposit:' : 'Calculated Withdrawal / Reduction:'}
+                        </span>
+                        <span className="text-lg font-bold">
+                          {parseFloat(newBalance) - totalCash < 0 ? '-' : '+'}{formatCurrency(Math.abs(parseFloat(newBalance) - totalCash), state.currency)}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -600,8 +626,21 @@ export function BeneficiaryDetail({ id, onBack }: { id: string, onBack: () => vo
               </div>
 
               <div className="pt-4">
-                <button type="submit" className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium transition-colors shadow-sm text-lg">
-                  {depType === 'once' ? (calcMode === 'balance' ? 'Set Balance & Add Difference' : 'Add Deposit') : 'Create Recurring Plan'}
+                <button 
+                  type="submit" 
+                  className={`w-full py-3.5 text-white rounded-xl font-medium transition-colors shadow-sm text-lg ${
+                    depType === 'once' && calcMode === 'balance' && newBalance && !isNaN(parseFloat(newBalance)) && parseFloat(newBalance) < totalCash
+                      ? 'bg-rose-600 hover:bg-rose-700'
+                      : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
+                >
+                  {depType === 'once' 
+                    ? (calcMode === 'balance' 
+                        ? (newBalance && !isNaN(parseFloat(newBalance)) && parseFloat(newBalance) < totalCash 
+                            ? 'Set Balance & Record Withdrawal' 
+                            : 'Set Balance & Save Adjustment') 
+                        : 'Add Deposit') 
+                    : 'Create Recurring Plan'}
                 </button>
               </div>
             </form>

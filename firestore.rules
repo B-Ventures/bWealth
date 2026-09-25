@@ -34,6 +34,7 @@ service cloud.firestore {
         && (data.get('lastGoldPrice', 0) is number)
         && (data.get('previousGoldPrice', 0) is number)
         && (data.get('lastSyncedAt', '') is string)
+        && (data.get('goldPriceCountry', '') is string)
         && (data.get('goldSourceUrl', '') is string)
         && data.updatedAt == request.time;
     }
@@ -51,7 +52,7 @@ service cloud.firestore {
     function isValidDeposit(data) {
       return data.keys().hasAll(['beneficiaryId', 'amount', 'date', 'status', 'createdAt'])
         && isValidId(data.beneficiaryId)
-        && data.amount is number && data.amount >= 0
+        && data.amount is number
         && data.date is string
         && (data.get('isRecurring', false) is bool)
         && data.status in ['pending', 'completed', 'skipped']
